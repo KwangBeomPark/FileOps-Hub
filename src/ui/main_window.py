@@ -1,6 +1,8 @@
-from PyQt6.QtWidgets import QMainWindow, QTabWidget, QMessageBox, QStatusBar
+from PyQt6.QtWidgets import QMainWindow, QTabWidget, QMessageBox, QStatusBar, QProgressDialog
 from PyQt6.QtGui import QAction
-from PyQt6.QtCore import QThread, pyqtSignal
+from PyQt6.QtCore import QThread, pyqtSignal, Qt
+import os
+import tempfile
 
 from src.ui.pdf_tab import PDFTab
 from src.ui.ocr_tab import OCRTab
@@ -57,7 +59,7 @@ QGroupBox::title {
     padding: 0 6px;
     color: #38bdf8;
 }
-QLineEdit, QListWidget, QTextEdit, QTableWidget {
+QLineEdit, QListWidget, QTextEdit, QTableWidget, QTimeEdit, QDateEdit, QDateTimeEdit, QSpinBox, QDoubleSpinBox {
     border: 1px solid #3e3e3e;
     border-radius: 4px;
     background-color: #1e1e1e;
@@ -242,6 +244,36 @@ class UpdateWorker(QThread):
         self.finished.emit(has_update, latest, url or "", notes)
 
 
+class DownloadWorker(QThread):
+    progress = pyqtSignal(int, int) # downloaded_bytes, total_bytes
+    finished = pyqtSignal(bool, str) # success, error_message or saved_path
+    
+    def __init__(self, updater, download_url, dest_path):
+        super().__init__()
+        self.updater = updater
+        self.download_url = download_url
+        self.dest_path = dest_path
+        self._is_cancelled = False
+        
+    def run(self):
+        def progress_cb(downloaded, total):
+            if self._is_cancelled:
+                raise InterruptedError("Download cancelled by user.")
+            self.progress.emit(downloaded, total)
+            
+        try:
+            self.updater.download_file(self.download_url, self.dest_path, progress_cb)
+            if self._is_cancelled:
+                self.finished.emit(False, "Cancelled")
+            else:
+                self.finished.emit(True, self.dest_path)
+        except Exception as e:
+            self.finished.emit(False, str(e))
+            
+    def cancel(self):
+        self._is_cancelled = True
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -346,7 +378,7 @@ class MainWindow(QMainWindow):
             self.status_bar.showMessage("Update check finished.", 3000)
             
         if has_update:
-            msg = f"새로운 버전 ({latest_version})이 발견되었습니다!\n\n[릴리즈 노트]\n{release_notes}\n\n다운로드 페이지로 이동하시겠습니까?"
+            msg = f"새로운 버전 ({latest_version})이 발견되었습니다!\n\n[릴리즈 노트]\n{release_notes}\n\n지금 업데이트를 다운로드하고 설치하시겠습니까?"
             reply = QMessageBox.question(
                 self,
                 "업데이트 알림",
@@ -355,10 +387,13 @@ class MainWindow(QMainWindow):
                 QMessageBox.StandardButton.Yes
             )
             if reply == QMessageBox.StandardButton.Yes:
-                import webbrowser
-                # 만약 자산 다운로드 URL이 있으면 그걸 열고, 없으면 릴리즈 전체 탭을 브라우저에 띄움
-                target_url = download_url or "https://github.com/kwangbeom-park/Project06_py_DataOperting/releases"
-                webbrowser.open(target_url)
+                if download_url:
+                    self.start_update_download(download_url)
+                else:
+                    # 다운로드 링크가 없을 경우 웹브라우저로 이동
+                    import webbrowser
+                    target_url = f"https://github.com/{self.update_worker.updater.repo_owner}/{self.update_worker.updater.repo_name}/releases"
+                    webbrowser.open(target_url)
         else:
             if not silent:
                 QMessageBox.information(
@@ -366,6 +401,84 @@ class MainWindow(QMainWindow):
                     "업데이트 정보",
                     f"현재 최신 버전 ({self.current_version})을 사용하고 있습니다."
                 )
+
+    def start_update_download(self, download_url):
+        # 다운로드 경로 설정 (시스템 임시 폴더)
+        temp_dir = tempfile.gettempdir()
+        filename = download_url.split('/')[-1] if download_url else "IntegratedDataTool_Setup.exe"
+        if not filename.endswith('.exe') and not filename.endswith('.zip'):
+            filename = "IntegratedDataTool_Setup.exe"
+        dest_path = os.path.join(temp_dir, filename)
+        
+        # 진행 상태 다이얼로그 생성
+        progress_dialog = QProgressDialog("업데이트 다운로드 중...", "취소", 0, 100, self)
+        progress_dialog.setWindowTitle("업데이트 다운로드")
+        progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
+        progress_dialog.setAutoClose(True)
+        progress_dialog.setAutoReset(True)
+        progress_dialog.show()
+        
+        # 백그라운드 다운로드 워커 기동
+        download_worker = DownloadWorker(self.update_worker.updater, download_url, dest_path)
+        self._active_download_worker = download_worker  # GC 방지 및 취소용
+        
+        def update_progress(downloaded, total):
+            if total > 0:
+                val = int(downloaded * 100 / total)
+                progress_dialog.setValue(val)
+                downloaded_mb = downloaded / (1024 * 1024)
+                total_mb = total / (1024 * 1024)
+                progress_dialog.setLabelText(f"다운로드 중... ({downloaded_mb:.1f} MB / {total_mb:.1f} MB)")
+            else:
+                progress_dialog.setLabelText("다운로드 중...")
+                
+        download_worker.progress.connect(update_progress)
+        
+        def cancel_download():
+            download_worker.cancel()
+            self.status_bar.showMessage("Download cancelled by user.", 3000)
+            
+        progress_dialog.canceled.connect(cancel_download)
+        
+        def on_download_finished(success, result):
+            progress_dialog.close()
+            if success:
+                # 다운로드 성공 -> 설치 실행 의사 확인
+                reply = QMessageBox.question(
+                    self,
+                    "다운로드 완료",
+                    "업데이트 설치 파일 다운로드가 완료되었습니다. 즉시 설치를 진행하시겠습니까?\n"
+                    "(설치 시작 시 프로그램이 자동으로 종료됩니다.)",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.Yes
+                )
+                if reply == QMessageBox.StandardButton.Yes:
+                    try:
+                        # 방어 검증: 파일 존재 여부 및 확장자 검증
+                        if not os.path.exists(result):
+                            raise FileNotFoundError("다운로드된 설치 파일을 찾을 수 없습니다.")
+                        if not result.lower().endswith('.exe'):
+                            raise PermissionError("실행 가능한 설치 파일(.exe)만 바로 실행할 수 있습니다.")
+                            
+                        # 설치 파일 실행
+                        os.startfile(result)
+                        
+                        # 모든 작업 강제 중단 후 즉시 종료 (인스톨러가 바로 덮어쓸 수 있도록)
+                        self.task_tab.stop_all()
+                        self.pdf_tab.stop_all()
+                        self.ocr_tab.stop_all()
+                        self.eml_tab.stop_all()
+                        self.sync_tab.stop_all()
+                        self.bypass_tab.stop_all()
+                        os._exit(0)
+                    except Exception as err:
+                        QMessageBox.critical(self, "실행 오류", f"설치 파일 실행 중 오류가 발생했습니다:\n{err}")
+            else:
+                if result != "Cancelled":
+                    QMessageBox.critical(self, "다운로드 실패", f"업데이트 다운로드 중 오류가 발생했습니다:\n{result}")
+                    
+        download_worker.finished.connect(on_download_finished)
+        download_worker.start()
                 
     def open_settings(self):
         dialog = SettingsDialog(self.config_manager, self)

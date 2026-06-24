@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (
     QHeaderView, QMessageBox, QCheckBox, QFrame, QTimeEdit
 )
 from PyQt6.QtCore import Qt, QTime, QTimer
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QColor
 
 # Core Modules
 from src.core.task_engine import TaskWorker
@@ -40,9 +40,9 @@ class TaskTab(QWidget):
         ctrl_frame.setObjectName("controlFrame")
         ctrl_frame.setStyleSheet("""
             QFrame#controlFrame {
-                background-color: #ffffff;
+                background-color: #1e1e1e;
                 border-radius: 8px;
-                border: 1px solid #dcdcdc;
+                border: 1px solid #3e3e3e;
             }
         """)
         ctrl_layout = QHBoxLayout()
@@ -50,7 +50,7 @@ class TaskTab(QWidget):
         
         title_label = QLabel("통합 태스크 실행 센터")
         title_label.setFont(QFont("Malgun Gothic", 12, QFont.Weight.Bold))
-        title_label.setStyleSheet("color: #333333;")
+        title_label.setStyleSheet("color: #e2e8f0;")
         ctrl_layout.addWidget(title_label)
         ctrl_layout.addStretch()
 
@@ -100,7 +100,9 @@ class TaskTab(QWidget):
                 background-color: #27ae60;
             }
             QPushButton:disabled {
-                background-color: #bdc3c7;
+                background-color: #2d2d2d;
+                color: #64748b;
+                border: 1px solid #3e3e3e;
             }
         """)
         self.start_btn.clicked.connect(self.start_all_tasks)
@@ -121,7 +123,9 @@ class TaskTab(QWidget):
                 background-color: #c0392b;
             }
             QPushButton:disabled {
-                background-color: #bdc3c7;
+                background-color: #2d2d2d;
+                color: #64748b;
+                border: 1px solid #3e3e3e;
             }
         """)
         self.stop_btn.clicked.connect(self.stop_tasks)
@@ -141,15 +145,18 @@ class TaskTab(QWidget):
         self.status_table.setMinimumHeight(180)
         self.status_table.setStyleSheet("""
             QTableWidget {
-                background-color: white;
-                border: 1px solid #dcdcdc;
+                background-color: #1e1e1e;
+                color: #e2e8f0;
+                gridline-color: #3e3e3e;
+                border: 1px solid #3e3e3e;
                 border-radius: 6px;
             }
             QHeaderView::section {
-                background-color: #f1f2f6;
+                background-color: #252526;
+                color: #e2e8f0;
                 padding: 5px;
                 font-weight: bold;
-                border: 1px solid #dcdcdc;
+                border: 1px solid #3e3e3e;
             }
         """)
         
@@ -173,7 +180,7 @@ class TaskTab(QWidget):
             # 상태
             status_item = QTableWidgetItem("대기 중")
             status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            status_item.setForeground(Qt.GlobalColor.gray)
+            status_item.setForeground(QColor("#94a3b8"))
             self.status_table.setItem(row_idx, 1, status_item)
             
         layout.addWidget(self.status_table)
@@ -188,15 +195,15 @@ class TaskTab(QWidget):
         self.progress_bar.setFormat("통합 진행률: %p%")
         self.progress_bar.setStyleSheet("""
             QProgressBar {
-                border: 1px solid #dcdcdc;
+                border: 1px solid #3e3e3e;
                 border-radius: 6px;
                 text-align: center;
-                background-color: #f1f2f6;
+                background-color: #1e1e1e;
                 font-weight: bold;
                 height: 25px;
             }
             QProgressBar::chunk {
-                background-color: #2980b9;
+                background-color: #0e639c;
                 border-radius: 5px;
             }
         """)
@@ -204,7 +211,7 @@ class TaskTab(QWidget):
         
         # 미세 진행 레이블
         self.detail_label = QLabel("대기 중...")
-        self.detail_label.setStyleSheet("font-size: 11px; color: #555555;")
+        self.detail_label.setStyleSheet("font-size: 11px; color: #a0a0a0;")
         progress_layout.addWidget(self.detail_label)
         
         layout.addLayout(progress_layout)
@@ -352,10 +359,10 @@ class TaskTab(QWidget):
             row = self.step_keys[key]
             if tasks_dict[key] is None:
                 self.status_table.item(row, 1).setText("건너뜀")
-                self.status_table.item(row, 1).setForeground(Qt.GlobalColor.gray)
+                self.status_table.item(row, 1).setForeground(QColor("#94a3b8"))
             else:
                 self.status_table.item(row, 1).setText("대기 중")
-                self.status_table.item(row, 1).setForeground(Qt.GlobalColor.blue)
+                self.status_table.item(row, 1).setForeground(QColor("#38bdf8"))
                 
         self.progress_bar.setValue(0)
         self.detail_label.setText("통합 태스크 분석 중...")
@@ -398,15 +405,17 @@ class TaskTab(QWidget):
             cell = self.status_table.item(row, 1)
             cell.setText(status)
             if status == "진행 중":
-                cell.setForeground(Qt.GlobalColor.darkBlue)
+                cell.setForeground(QColor("#38bdf8"))
             elif status == "완료":
-                cell.setForeground(Qt.GlobalColor.darkGreen)
+                cell.setForeground(QColor("#4ade80"))
             elif status == "일부 실패":
-                cell.setForeground(Qt.GlobalColor.red)
+                cell.setForeground(QColor("#f87171"))
             elif status == "실패":
-                cell.setForeground(Qt.GlobalColor.red)
+                cell.setForeground(QColor("#f87171"))
             elif status == "취소됨":
-                cell.setForeground(Qt.GlobalColor.darkYellow)
+                cell.setForeground(QColor("#fbbf24"))
+            else:
+                cell.setForeground(QColor("#94a3b8"))
 
     def on_tasks_finished(self, success, message, report_body):
         scheduled_run = self.is_scheduled_run
