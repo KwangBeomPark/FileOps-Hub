@@ -1,0 +1,580 @@
+import os
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QProgressBar,
+    QFileDialog, QMessageBox, QGroupBox, QTextEdit, QComboBox, QCheckBox,
+    QTableWidget, QTableWidgetItem, QHeaderView, QRadioButton, QButtonGroup
+)
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
+
+from src.ui.workflow_widget import WorkflowWidget
+from src.ui.toast_notification import show_toast
+from src.core.bypass_converter import BypassConverter
+from src.utils.logger import get_logger
+
+logger = get_logger()
+
+class BypassConvertWorker(QThread):
+    progress = pyqtSignal(int, int, str)  # current, total, status_msg
+    file_completed = pyqtSignal(str, str, bool, str)  # src, tgt, success, message
+    finished = pyqtSignal(bool, str)      # success, message
+    
+    def __init__(self, tasks, converter):
+        super().__init__()
+        self.tasks = tasks
+        self.converter = converter
+        self.is_running = True
+        
+    def stop(self):
+        self.is_running = False
+        
+    def run(self):
+        total = len(self.tasks)
+        success_count = 0
+        
+        try:
+            for idx, task in enumerate(self.tasks):
+                if not self.is_running:
+                    self.finished.emit(False, "사용자에 의해 중지되었습니다.")
+                    return
+                    
+                src = task["src"]
+                tgt = task["tgt"]
+                ext = task["ext"]
+                preserve_meta = task["preserve_meta"]
+                delete_original = task["delete_original"]
+                
+                filename = os.path.basename(src)
+                self.progress.emit(idx, total, f"우회 변환 진행 중: {filename}")
+                
+                # 변환 수행
+                success, msg = self.converter.convert_file(
+                    src_path=src,
+                    tgt_path=tgt,
+                    target_ext=ext,
+                    preserve_meta=preserve_meta,
+                    delete_original=delete_original
+                )
+                
+                if success:
+                    success_count += 1
+                    self.file_completed.emit(src, tgt, True, "성공")
+                else:
+                    self.file_completed.emit(src, tgt, False, msg)
+                    
+            self.progress.emit(total, total, f"변환 완료 ({success_count}/{total} 성공)")
+            self.finished.emit(
+                success_count == total,
+                f"우회 변환이 완료되었습니다. (성공: {success_count}개 / 전체: {total}개)"
+            )
+            
+        except Exception as e:
+            logger.error(f"Error in BypassConvertWorker: {e}")
+            self.finished.emit(False, f"작업 중 오류 발생: {str(e)}")
+
+
+class BypassTab(QWidget):
+    def __init__(self, config_manager, parent=None):
+        super().__init__(parent)
+        self.config_manager = config_manager
+        self.converter = BypassConverter()
+        
+        self.scanned_files = []      # 스캔된 원본 파일 리스트
+        self.worker = None
+        self.is_running = False
+        
+        self.init_ui()
+        self.setAcceptDrops(True)
+        
+    def init_ui(self):
+        layout = QVBoxLayout()
+        self.setLayout(layout)
+        
+        # 1. 워크플로우 인디케이터
+        self.workflow_widget = WorkflowWidget(steps=["1. Scan Files", "2. Run Conversion", "3. Complete"])
+        layout.addWidget(self.workflow_widget)
+        
+        # 2. 소스 및 대상 폴더 선택 패널
+        folder_group = QGroupBox("Directory Configuration")
+        folder_layout = QVBoxLayout()
+        folder_group.setLayout(folder_layout)
+        
+        # 소스 폴더
+        src_layout = QHBoxLayout()
+        src_label = QLabel("Source Folder:")
+        src_label.setMinimumWidth(100)
+        self.src_entry = QLabel("드래그 앤 드롭 또는 우측 버튼으로 폴더를 선택하세요.")
+        self.src_entry.setStyleSheet(
+            "background-color: #1e1e1e; color: #94a3b8; border: 1px dashed #475569; "
+            "padding: 8px; border-radius: 4px; font-style: italic;"
+        )
+        src_btn = QPushButton("폴더 선택")
+        src_btn.clicked.connect(self.select_source_folder)
+        src_layout.addWidget(src_label)
+        src_layout.addWidget(self.src_entry, 1)
+        src_layout.addWidget(src_btn)
+        folder_layout.addLayout(src_layout)
+        
+        # 대상 폴더 옵션
+        tgt_option_layout = QHBoxLayout()
+        self.radio_inplace = QRadioButton("소스 폴더에 덮어쓰기/저장 (In-place)")
+        self.radio_inplace.setChecked(True)
+        self.radio_inplace.toggled.connect(self.toggle_target_mode)
+        
+        self.radio_custom = QRadioButton("특정 저장용 폴더에 우회 보관 (Target)")
+        self.radio_custom.toggled.connect(self.toggle_target_mode)
+        
+        self.bg_group = QButtonGroup()
+        self.bg_group.addButton(self.radio_inplace)
+        self.bg_group.addButton(self.radio_custom)
+        
+        tgt_option_layout.addWidget(self.radio_inplace)
+        tgt_option_layout.addWidget(self.radio_custom)
+        tgt_option_layout.addStretch()
+        folder_layout.addLayout(tgt_option_layout)
+        
+        # 대상 폴더 경로 선택기
+        self.tgt_layout_widget = QWidget()
+        tgt_layout = QHBoxLayout()
+        self.tgt_layout_widget.setLayout(tgt_layout)
+        self.tgt_layout_widget.setContentsMargins(0, 0, 0, 0)
+        
+        tgt_label = QLabel("Target Folder:")
+        tgt_label.setMinimumWidth(100)
+        self.tgt_entry = QLabel("저장할 우회 폴더를 선택하세요.")
+        self.tgt_entry.setStyleSheet(
+            "background-color: #1e1e1e; color: #94a3b8; border: 1px dashed #475569; "
+            "padding: 8px; border-radius: 4px; font-style: italic;"
+        )
+        tgt_btn = QPushButton("폴더 선택")
+        tgt_btn.clicked.connect(self.select_target_folder)
+        tgt_layout.addWidget(tgt_label)
+        tgt_layout.addWidget(self.tgt_entry, 1)
+        tgt_layout.addWidget(tgt_btn)
+        folder_layout.addWidget(self.tgt_layout_widget)
+        self.tgt_layout_widget.setVisible(False) # 기본값은 In-place이므로 비활성화
+        
+        layout.addWidget(folder_group)
+        
+        # 3. 우회 포맷 및 규칙 매핑 패널
+        rules_group = QGroupBox("Bypass Rules Mapping & Options")
+        rules_layout = QHBoxLayout()
+        rules_group.setLayout(rules_layout)
+        
+        # 콤보박스들 구성
+        excel_label = QLabel("Excel (.xlsx/.xls):")
+        self.excel_combo = QComboBox()
+        self.excel_combo.addItems([".xlsb", ".xlsm", ".xlsx"])
+        
+        ppt_label = QLabel("PowerPoint (.pptx/.ppt):")
+        self.ppt_combo = QComboBox()
+        self.ppt_combo.addItems([".pptm", ".pptx"])
+        
+        word_label = QLabel("Word (.docx/.doc):")
+        self.word_combo = QComboBox()
+        self.word_combo.addItems([".docm", ".docx"])
+        
+        pdf_label = QLabel("PDF (.pdf):")
+        self.pdf_combo = QComboBox()
+        self.pdf_combo.addItems([".zip", ".pdf"])
+        
+        # 옵션 체크박스
+        self.check_delete_orig = QCheckBox("변환 완료 후 원본 파일 삭제 (Delete Original)")
+        self.check_preserve_meta = QCheckBox("파일 메타정보(생성/수정/액세스 날짜) 보존 (Preserve Meta)")
+        
+        # 설정값 반영
+        self.excel_combo.setCurrentText(self.config_manager.get("bypass_excel_target", ".xlsb"))
+        self.ppt_combo.setCurrentText(self.config_manager.get("bypass_ppt_target", ".pptm"))
+        self.word_combo.setCurrentText(self.config_manager.get("bypass_word_target", ".docm"))
+        self.pdf_combo.setCurrentText(self.config_manager.get("bypass_pdf_target", ".zip"))
+        self.check_delete_orig.setChecked(self.config_manager.get("bypass_delete_original", True))
+        self.check_preserve_meta.setChecked(self.config_manager.get("bypass_preserve_meta", True))
+        
+        # 레이아웃 배치
+        v_combos = QVBoxLayout()
+        h_row1 = QHBoxLayout()
+        h_row1.addWidget(excel_label)
+        h_row1.addWidget(self.excel_combo)
+        h_row1.addWidget(ppt_label)
+        h_row1.addWidget(self.ppt_combo)
+        v_combos.addLayout(h_row1)
+        
+        h_row2 = QHBoxLayout()
+        h_row2.addWidget(word_label)
+        h_row2.addWidget(self.word_combo)
+        h_row2.addWidget(pdf_label)
+        h_row2.addWidget(self.pdf_combo)
+        v_combos.addLayout(h_row2)
+        rules_layout.addLayout(v_combos, 3)
+        
+        v_options = QVBoxLayout()
+        v_options.addWidget(self.check_delete_orig)
+        v_options.addWidget(self.check_preserve_meta)
+        rules_layout.addLayout(v_options, 2)
+        
+        layout.addWidget(rules_group)
+        
+        # 4. 파일 리스트 및 로그 영역 (좌/우 분할)
+        main_h_layout = QHBoxLayout()
+        
+        # 좌측: 스캔 파일 리스트 테이블
+        left_panel = QGroupBox("Target Scan Files (Simulation)")
+        left_layout = QVBoxLayout()
+        left_panel.setLayout(left_layout)
+        
+        self.file_table = QTableWidget()
+        self.file_table.setColumnCount(4)
+        self.file_table.setHorizontalHeaderLabels(["File Name", "Original Size", "Target Format", "Status"])
+        self.file_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        left_layout.addWidget(self.file_table)
+        
+        self.summary_label = QLabel("검색된 대상 파일: 0개")
+        left_layout.addWidget(self.summary_label)
+        
+        # 제어 버튼 레이아웃
+        btn_layout = QHBoxLayout()
+        self.scan_btn = QPushButton("대상 파일 스캔")
+        self.scan_btn.clicked.connect(self.scan_source_folder)
+        self.start_btn = QPushButton("우회 변환 시작")
+        self.start_btn.setProperty("variant", "success")
+        self.start_btn.clicked.connect(self.start_conversion)
+        self.stop_btn = QPushButton("중지")
+        self.stop_btn.setProperty("variant", "danger")
+        self.stop_btn.setEnabled(False)
+        self.stop_btn.clicked.connect(self.stop_conversion)
+        
+        btn_layout.addWidget(self.scan_btn)
+        btn_layout.addWidget(self.start_btn)
+        btn_layout.addWidget(self.stop_btn)
+        left_layout.addLayout(btn_layout)
+        
+        main_h_layout.addWidget(left_panel, 3)
+        
+        # 우측: 상세 작업 로그 콘솔
+        right_panel = QGroupBox("Detailed Activity Log")
+        right_layout = QVBoxLayout()
+        right_panel.setLayout(right_layout)
+        
+        self.log_area = QTextEdit()
+        self.log_area.setReadOnly(True)
+        self.log_area.setStyleSheet("background-color: #1e1e1e; color: #cbd5e1; border: 1px solid #334155; font-family: Consolas;")
+        right_layout.addWidget(self.log_area)
+        
+        main_h_layout.addWidget(right_panel, 2)
+        layout.addLayout(main_h_layout)
+        
+        # 진행 상태 바
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setValue(0)
+        layout.addWidget(self.progress_bar)
+        
+        # 복구 폴더 연결
+        last_src = self.config_manager.get("last_bypass_source_directory", "")
+        if last_src and os.path.exists(last_src):
+            self.set_source_folder_path(last_src)
+            
+        last_tgt = self.config_manager.get("last_bypass_target_directory", "")
+        if last_tgt and os.path.exists(last_tgt):
+            self.set_target_folder_path(last_tgt)
+            self.radio_custom.setChecked(True)
+            self.tgt_layout_widget.setVisible(True)
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+            
+    def dropEvent(self, event):
+        for url in event.mimeData().urls():
+            file_path = os.path.normpath(url.toLocalFile())
+            if os.path.isdir(file_path):
+                self.set_source_folder_path(file_path)
+                self.log_area.append(f"ℹ️ 드롭 감지: 소스 폴더가 지정되었습니다. ({file_path})")
+                self.scan_source_folder()
+                break
+
+    def toggle_target_mode(self):
+        is_custom = self.radio_custom.isChecked()
+        self.tgt_layout_widget.setVisible(is_custom)
+        
+    def select_source_folder(self):
+        initial = self.config_manager.get("last_bypass_source_directory", "")
+        folder = QFileDialog.getExistingDirectory(self, "소스 폴더 선택", initial)
+        if folder:
+            self.set_source_folder_path(os.path.normpath(folder))
+            self.scan_source_folder()
+            
+    def select_target_folder(self):
+        initial = self.config_manager.get("last_bypass_target_directory", "")
+        folder = QFileDialog.getExistingDirectory(self, "대상 보관 폴더 선택", initial)
+        if folder:
+            self.set_target_folder_path(os.path.normpath(folder))
+            
+    def set_source_folder_path(self, path):
+        self.src_entry.setText(path)
+        self.src_entry.setStyleSheet(
+            "background-color: #1e1e1e; color: #cbd5e1; border: 1px solid #334155; "
+            "padding: 8px; border-radius: 4px; font-weight: bold;"
+        )
+        self.config_manager.set("last_bypass_source_directory", path)
+        
+    def set_target_folder_path(self, path):
+        self.tgt_entry.setText(path)
+        self.tgt_entry.setStyleSheet(
+            "background-color: #1e1e1e; color: #cbd5e1; border: 1px solid #334155; "
+            "padding: 8px; border-radius: 4px; font-weight: bold;"
+        )
+        self.config_manager.set("last_bypass_target_directory", path)
+
+    def scan_source_folder(self):
+        src_dir = self.src_entry.text()
+        if not os.path.exists(src_dir) or src_dir.startswith("드래그 앤 드롭"):
+            QMessageBox.warning(self, "경고", "올바른 소스 폴더를 먼저 선택해 주세요.")
+            return
+            
+        self.scanned_files.clear()
+        self.file_table.setRowCount(0)
+        self.log_area.clear()
+        self.progress_bar.setValue(0)
+        self.workflow_widget.reset()
+        
+        self.log_area.append("🔄 소스 폴더 내 변환 가능 파일을 검색 중입니다...")
+        
+        target_extensions = ('.xlsx', '.xls', '.xlsm', '.pptx', '.ppt', '.pptm', '.docx', '.doc', '.docm', '.pdf')
+        
+        try:
+            # 1단계 직계 파일만 검색 (Spaghetti 방지 및 간단성 유지)
+            for file_name in os.listdir(src_dir):
+                file_path = os.path.join(src_dir, file_name)
+                if os.path.isfile(file_path):
+                    _, ext = os.path.splitext(file_name.lower())
+                    if ext in target_extensions:
+                        self.scanned_files.append(file_path)
+                        
+            # 테이블 채우기
+            self.file_table.setRowCount(len(self.scanned_files))
+            for idx, file_path in enumerate(self.scanned_files):
+                filename = os.path.basename(file_path)
+                size_bytes = os.path.getsize(file_path)
+                size_kb = f"{size_bytes / 1024:.1f} KB"
+                
+                # 원본 종류 판별 및 우회 종류 매칭
+                _, ext = os.path.splitext(filename.lower())
+                tgt_ext = ""
+                if ext in ('.xlsx', '.xls', '.xlsm'):
+                    tgt_ext = self.excel_combo.currentText()
+                elif ext in ('.pptx', '.ppt', '.pptm'):
+                    tgt_ext = self.ppt_combo.currentText()
+                elif ext in ('.docx', '.doc', '.docm'):
+                    tgt_ext = self.word_combo.currentText()
+                elif ext == '.pdf':
+                    tgt_ext = self.pdf_combo.currentText()
+                
+                # 테이블 열 세팅
+                self.file_table.setItem(idx, 0, QTableWidgetItem(filename))
+                self.file_table.setItem(idx, 1, QTableWidgetItem(size_kb))
+                self.file_table.setItem(idx, 2, QTableWidgetItem(tgt_ext))
+                self.file_table.setItem(idx, 3, QTableWidgetItem("대기 중"))
+                
+            self.summary_label.setText(f"검색된 대상 파일: {len(self.scanned_files)}개")
+            self.log_area.append(f"✅ 스캔 완료: 총 {len(self.scanned_files)}개의 대상 파일을 발견했습니다.")
+            self.workflow_widget.set_active_step(1)
+            
+        except Exception as e:
+            self.log_area.append(f"❌ 스캔 실패: {str(e)}")
+            QMessageBox.critical(self, "오류", f"폴더 스캔 중 오류 발생: {str(e)}")
+
+    def start_conversion(self):
+        if not self.scanned_files:
+            QMessageBox.warning(self, "경고", "변환할 대상 파일이 없습니다. 스캔을 먼저 실행해 주세요.")
+            return
+            
+        # 설정값 실시간 캐시 동기화
+        self.config_manager.set("bypass_excel_target", self.excel_combo.currentText())
+        self.config_manager.set("bypass_ppt_target", self.ppt_combo.currentText())
+        self.config_manager.set("bypass_word_target", self.word_combo.currentText())
+        self.config_manager.set("bypass_pdf_target", self.pdf_combo.currentText())
+        self.config_manager.set("bypass_delete_original", self.check_delete_orig.isChecked())
+        self.config_manager.set("bypass_preserve_meta", self.check_preserve_meta.isChecked())
+        
+        # 대상 폴더 결정
+        src_dir = self.src_entry.text()
+        inplace_mode = self.radio_inplace.isChecked()
+        tgt_dir = src_dir if inplace_mode else self.tgt_entry.text()
+        
+        if not inplace_mode and (not os.path.exists(tgt_dir) or tgt_dir.startswith("저장할 우회")):
+            QMessageBox.warning(self, "경고", "지정할 대상 보관 폴더를 선택해 주세요.")
+            return
+            
+        # 작업 리스트 작성
+        tasks = []
+        for idx in range(self.file_table.rowCount()):
+            filename = self.file_table.item(idx, 0).text()
+            src_file = os.path.join(src_dir, filename)
+            
+            # 우회 파일명 결정 (In-place 일 때 확장자만 다르게 하거나 충돌 방지)
+            tgt_ext = self.file_table.item(idx, 2).text()
+            name_no_ext, _ = os.path.splitext(filename)
+            tgt_filename = f"{name_no_ext}{tgt_ext}"
+            tgt_file = os.path.join(tgt_dir, tgt_filename)
+            
+            # 중복 파일 충돌 처리 (동일 경로 내 변환 시 중복 접미사)
+            if os.path.exists(tgt_file) and tgt_file != src_file:
+                counter = 1
+                while True:
+                    tgt_filename = f"{name_no_ext}_{counter}{tgt_ext}"
+                    tgt_file = os.path.join(tgt_dir, tgt_filename)
+                    if not os.path.exists(tgt_file):
+                        break
+                    counter += 1
+                    
+            tasks.append({
+                "src": src_file,
+                "tgt": tgt_file,
+                "ext": tgt_ext,
+                "preserve_meta": self.check_preserve_meta.isChecked(),
+                "delete_original": self.check_delete_orig.isChecked()
+            })
+            
+        self.is_running = True
+        self.scan_btn.setEnabled(False)
+        self.start_btn.setEnabled(False)
+        self.stop_btn.setEnabled(True)
+        self.progress_bar.setValue(0)
+        
+        self.log_area.append("\n🚀 우회 변환 시작...")
+        self.workflow_widget.set_active_step(1)
+        
+        # 워커 실행
+        self.worker = BypassConvertWorker(tasks, self.converter)
+        self.worker.progress.connect(self.update_progress)
+        self.worker.file_completed.connect(self.on_file_completed)
+        self.worker.finished.connect(self.on_finished)
+        self.worker.start()
+        
+    def stop_conversion(self):
+        if self.worker:
+            self.worker.stop()
+            self.stop_btn.setEnabled(False)
+            self.log_area.append("⚠️ 작업 중단 요청 중...")
+            
+    def stop_all(self):
+        """MainWindow 종료 시 바인딩"""
+        if self.worker and self.worker.isRunning():
+            self.worker.stop()
+            self.worker.wait()
+
+    def update_progress(self, current, total, status_msg):
+        percent = int((current / total) * 100) if total > 0 else 0
+        self.progress_bar.setValue(percent)
+        self.log_area.append(f"🔄 {status_msg}")
+        if parent_win := self.window():
+            if hasattr(parent_win, 'status_bar'):
+                parent_win.status_bar.showMessage(status_msg)
+                
+    def on_file_completed(self, src_path, tgt_path, success, message):
+        filename = os.path.basename(src_path)
+        tgt_name = os.path.basename(tgt_path)
+        
+        for idx in range(self.file_table.rowCount()):
+            if self.file_table.item(idx, 0).text() == filename:
+                if success:
+                    self.file_table.setItem(idx, 3, QTableWidgetItem("완료"))
+                    self.file_table.item(idx, 3).setForeground(Qt.GlobalColor.green)
+                    self.log_area.append(f"🟢 [성공] {filename} -> {tgt_name}")
+                else:
+                    self.file_table.setItem(idx, 3, QTableWidgetItem(f"실패: {message}"))
+                    self.file_table.item(idx, 3).setForeground(Qt.GlobalColor.red)
+                    self.log_area.append(f"🔴 [실패] {filename}: {message}")
+                break
+                
+        self.workflow_widget.set_active_step(2)
+
+    def on_finished(self, success, message):
+        self.is_running = False
+        self.scan_btn.setEnabled(True)
+        self.start_btn.setEnabled(True)
+        self.stop_btn.setEnabled(False)
+        
+        if success:
+            self.workflow_widget.complete_all()
+            self.log_area.append(f"\n✅ {message}")
+            show_toast(self, "변환 완료!", "success")
+            QMessageBox.information(self, "완료", message)
+        else:
+            self.workflow_widget.reset()
+            self.log_area.append(f"\n❌ 작업 중단: {message}")
+            show_toast(self, f"작업 실패: {message}", "error")
+            QMessageBox.critical(self, "오류", f"작업 에러: {message}")
+            
+        # 스캔 리스트 리프레시 (원본 파일이 지워졌을 수 있으므로)
+        self.scan_source_folder()
+
+    def get_task_info(self):
+        src_dir = self.src_entry.text().strip()
+        if not src_dir or src_dir.startswith("드래그 앤 드롭"):
+            return None
+            
+        if not os.path.exists(src_dir):
+            raise ValueError(f"우회 변환 원본 폴더가 존재하지 않습니다: {src_dir}")
+            
+        # 스캔이 안 되어 있는 경우 자동 스캔
+        if not self.scanned_files:
+            self.scan_source_folder()
+            
+        if not self.scanned_files:
+            return None
+            
+        inplace_mode = self.radio_inplace.isChecked()
+        tgt_dir = src_dir if inplace_mode else self.tgt_entry.text().strip()
+        
+        if not inplace_mode and (not tgt_dir or tgt_dir.startswith("저장할 우회")):
+            raise ValueError("우회 변환 저장 폴더가 지정되지 않았습니다.")
+            
+        if not inplace_mode and not os.path.exists(tgt_dir):
+            raise ValueError(f"우회 변환 저장 폴더가 존재하지 않습니다: {tgt_dir}")
+            
+        # 작업 리스트 작성
+        tasks = []
+        for idx in range(self.file_table.rowCount()):
+            filename = self.file_table.item(idx, 0).text()
+            src_file = os.path.join(src_dir, filename)
+            
+            tgt_ext = self.file_table.item(idx, 2).text()
+            name_no_ext, _ = os.path.splitext(filename)
+            tgt_filename = f"{name_no_ext}{tgt_ext}"
+            tgt_file = os.path.join(tgt_dir, tgt_filename)
+            
+            if os.path.exists(tgt_file) and tgt_file != src_file:
+                counter = 1
+                while True:
+                    tgt_filename = f"{name_no_ext}_{counter}{tgt_ext}"
+                    tgt_file = os.path.join(tgt_dir, tgt_filename)
+                    if not os.path.exists(tgt_file):
+                        break
+                    counter += 1
+                    
+            tasks.append({
+                "src": src_file,
+                "tgt": tgt_file,
+                "ext": tgt_ext,
+                "preserve_meta": self.check_preserve_meta.isChecked(),
+                "delete_original": self.check_delete_orig.isChecked()
+            })
+            
+        return {
+            "tasks": tasks,
+            "delete_original": self.check_delete_orig.isChecked()
+        }
+        
+    def set_ui_locked(self, locked):
+        for btn in self.findChildren(QPushButton):
+            if btn not in (self.stop_btn,):
+                btn.setEnabled(not locked)
+        self.file_table.setEnabled(not locked)
+        self.radio_inplace.setEnabled(not locked)
+        self.radio_custom.setEnabled(not locked)
+        self.excel_combo.setEnabled(not locked)
+        self.ppt_combo.setEnabled(not locked)
+        self.word_combo.setEnabled(not locked)
+        self.pdf_combo.setEnabled(not locked)
+        self.check_delete_orig.setEnabled(not locked)
+        self.check_preserve_meta.setEnabled(not locked)

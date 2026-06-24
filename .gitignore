@@ -1,0 +1,33 @@
+# Python virtual environment
+.venv/
+venv/
+ENV/
+env/
+
+# Cache directories
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+
+# PyInstaller Build output
+build/
+dist/
+*.spec
+
+# User local validation tools (Excluding tools folder as per user global rules & instructions)
+tools/
+
+# Configuration files (containing private tokens & local path configurations)
+setting_integrated.json
+setting_PDF2Img.json
+config.json
+
+# System & IDE files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
