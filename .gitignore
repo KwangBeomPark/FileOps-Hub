@@ -17,9 +17,10 @@ htmlcov/
 build/
 dist/
 *.spec
+!IntegratedDataTool.spec
 
-# User local validation tools (Excluding tools folder as per user global rules & instructions)
-tools/
+# Local-only scratch files under tracked validation tools
+tools/_local/
 
 # Configuration files (containing private tokens & local path configurations)
 setting_integrated.json

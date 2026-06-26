@@ -1,41 +1,51 @@
-# 2026-06-21 전수 점검 결과
+# 2026-06-26 구조 개편 및 방어 점검 결과
 
 ## 점검 범위
-- `src/` 전체 코어·GUI 연결과 `tools/` 회귀 테스트 감사
-- Python 컴파일, Ruff 정적 검사, 실제 PDF/EML 렌더링, PyQt 오프스크린 GUI 기동
-- 동기화 충돌, DPAPI 설정, SMTP 모킹, Office COM 모킹, PyInstaller 빌드 점검
+
+- 통합 실행 아키텍처: 탭 raw dict 연결을 명시적 RunConfig/RunPlan 계약으로 교체
+- 실행 엔진 분리: PyQt 없는 `TaskRunner`와 QThread 어댑터 `TaskWorker` 분리
+- 외부 의존성 preflight: OCR, Playwright, Office COM, SMTP 설정 점검 공통화
+- 설정 보안: GitHub 토큰과 SMTP 비밀번호 DPAPI 처리 일원화, v1 설정 마이그레이션
+- 설치 방어: Git 소스 다운로드, PyInstaller, Inno Setup, Playwright Chromium 준비 흐름 점검
 
 ## 주요 교정
-- 통합 실행과 EML/OCR/포맷 변환 워커가 일부 실패를 전체 성공으로 보고하던 판정 수정
-- 일반 파일 동시 수정 충돌 시 충돌본만 이동하고 최신본 배포가 다음 실행까지 지연되던 문제 수정
-- 앱 실행 중 매일 지정 시각에 한 번 실행하는 예약 기능과 옵션 영속화 추가
-- 성공 여부와 무관하게 결과 보고서가 있으면 이메일 발송 또는 로컬 Fallback 저장
-- 변경 없는 EML의 재렌더링을 생략하도록 증분 변환 설정 연결
-- 일반 텍스트 EML의 `&`, `<`, `>` HTML 이스케이프 처리
-- `ConfigManager` 가변 기본값 공유와 암호화 실패 시 보안 키 평문 저장 가능성 차단
-- PDF 문서 핸들을 예외 시에도 닫도록 컨텍스트 관리 적용
-- Windows 빌드 의존성 `pywin32`, `PyInstaller` 명시
+
+- `src/core/task_contracts.py`를 추가해 실행 계약과 검증 예외를 고정했습니다.
+- `src/core/task_runner.py`를 추가해 통합 순차 실행을 순수 core 엔진으로 분리했습니다.
+- `src/ui/task_worker.py`를 추가해 Qt signal/QThread 책임만 UI 레이어에 남겼습니다.
+- 각 기능 탭에 `build_run_config()`를 추가하고 `get_task_info()`는 임시 호환 래퍼로 유지했습니다.
+- `BypassTab.build_run_config()`는 통합 실행 중 자동 스캔이나 메시지 박스를 띄우지 않고 현재 스캔 결과만 검증합니다.
+- `src/core/preflight.py`를 추가하고 `tools/diagnose_install.py`가 같은 점검 로직을 재사용하도록 정리했습니다.
+- `sender_password`를 `ConfigManager.SECURE_KEYS`에 포함하고 SettingsDialog/email_sender의 수동 암복호화를 제거했습니다.
+- `tools/build_all.py`와 `tools/diagnose_install.py`가 Inno Setup 기본 설치 경로도 탐색하도록 보강했습니다.
 
 ## 추가 테스트
-- 실제 1페이지 PDF -> JPG 렌더링
-- EML 증분 스킵과 평문 HTML 이스케이프
-- 동기화 충돌 백업 후 동일 실행 내 최신본 배포
-- 설정 기본값 격리와 암호화 실패 보안
-- 통합/개별 워커 부분 실패 판정
-- 일일 예약 실행 중복 방지
+
+- 계약 변환과 legacy dict 호환성
+- 탭별 `build_run_config()` 정상/검증 실패
+- `sender_password` DPAPI 암복호화와 v1 설정 마이그레이션
+- OCR, Office, SMTP preflight
+- 순수 `TaskRunner` 성공/부분 실패 report
+- GitHub 업데이트 asset 선택, HTTPS/domain 방어, 불완전 다운로드 삭제
 
 ## 운영상 남은 수동 검증
+
 - 회사 네트워크 드라이브와 OneDrive/SharePoint 동기화 지연 환경
 - 실제 Microsoft Office COM 저장 형식과 파일 잠금
 - 실제 SMTP 인증, 방화벽, 메일 수신자 정책
 - Tesseract 설치 경로 및 실제 정산 이미지 인식률
-- 앱 종료 상태에서도 실행해야 할 경우 Windows 작업 스케줄러 연동
+- 새 PC에서 GitHub Release 설치 파일 다운로드, 설치, 최초 실행
 
 ## 최종 자동 검증 결과
-- `python -m unittest discover -s tools -p "test_*.py"`: 46개 통과
+
 - `python -m compileall -q src tools`: 통과
-- `python -m ruff check src tools --select E9,F,B`: 통과, 지적 0건
-- `python tools/build_all.py`: 보안 사전 검사 및 PyInstaller 빌드 성공
-- `dist/release/IntegratedDataTool.exe`: 격리 설정으로 8초 기동 스모크 성공
-- EXE 크기: 124,970,830 bytes
-- EXE SHA-256: `491281061A784A4A0378E7392A648483E6BF684AB24DA0F186EC1D65DE877990`
+- `python -m unittest discover -s tools -p "test_*.py" -v`: 18개 통과
+- `python tools/diagnose_install.py --check-browser --check-office`: 차단 이슈 없음
+  - 경고: Tesseract 미설치/PATH 미설정, GitHub updater 저장소 미설정, 현재 PC의 Office COM 미등록
+- `python tools/build_all.py`: PyInstaller exe 및 Inno Setup installer 빌드 성공
+- `dist/IntegratedDataTool.exe` 8초 기동 스모크: 통과
+- `dist/IntegratedDataTool_Setup_v1.1.0.exe` 무인 설치, 설치된 EXE 8초 기동, 무인 제거 스모크: 통과
+- EXE 크기: 102,350,066 bytes
+- EXE SHA-256: `BB97C39B71B18817B9D6DB3F206215917C9D8541FAD2A4684AC44A9E1B66A369`
+- Installer 크기: 103,915,052 bytes
+- Installer SHA-256: `740B18663DE27075FEF20DDD7693CEC9273E7B0AC70C6FEA48A603F74E64B7AD`

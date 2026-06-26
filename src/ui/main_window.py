@@ -235,7 +235,7 @@ QCheckBox {
 class UpdateWorker(QThread):
     finished = pyqtSignal(bool, str, str, str) # has_update, latest_version, download_url, release_notes
     
-    def __init__(self, current_version="v1.0.0"):
+    def __init__(self, current_version="v1.1.0"):
         super().__init__()
         self.updater = AutoUpdater(current_version=current_version)
         
@@ -278,7 +278,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.config_manager = ConfigManager()
-        self.current_version = "v1.0.0" # 현재 애플리케이션 버전
+        self.current_version = "v1.1.0" # 현재 애플리케이션 버전
         self.update_worker = None
         self.init_ui()
         
@@ -405,9 +405,10 @@ class MainWindow(QMainWindow):
     def start_update_download(self, download_url):
         # 다운로드 경로 설정 (시스템 임시 폴더)
         temp_dir = tempfile.gettempdir()
-        filename = download_url.split('/')[-1] if download_url else "IntegratedDataTool_Setup.exe"
+        default_filename = f"IntegratedDataTool_Setup_{self.current_version}.exe"
+        filename = download_url.split('/')[-1] if download_url else default_filename
         if not filename.endswith('.exe') and not filename.endswith('.zip'):
-            filename = "IntegratedDataTool_Setup.exe"
+            filename = default_filename
         dest_path = os.path.join(temp_dir, filename)
         
         # 진행 상태 다이얼로그 생성

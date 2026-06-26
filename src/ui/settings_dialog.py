@@ -4,7 +4,6 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, 
     QFileDialog, QMessageBox, QGroupBox, QFormLayout, QComboBox, QScrollArea, QWidget
 )
-from src.utils.security import encrypt_data, decrypt_data
 
 class SettingsDialog(QDialog):
     def __init__(self, config_manager, parent=None):
@@ -141,14 +140,7 @@ class SettingsDialog(QDialog):
         smtp_server = self.config_manager.get("smtp_server", "")
         smtp_port = self.config_manager.get("smtp_port", "")
         sender_email = self.config_manager.get("sender_email", "")
-        # 패스워드 복호화
-        sender_pwd_encrypted = self.config_manager.get("sender_password", "")
-        sender_pwd = ""
-        if sender_pwd_encrypted:
-            try:
-                sender_pwd = decrypt_data(sender_pwd_encrypted)
-            except Exception:
-                pass
+        sender_pwd = self.config_manager.get("sender_password", "")
                 
         receiver_email = self.config_manager.get("receiver_email", "")
         mail_subject = self.config_manager.get("mail_subject", "통합 작업 완료 결과 보고서")
@@ -231,15 +223,6 @@ class SettingsDialog(QDialog):
                     QMessageBox.warning(self, "입력 오류", f"수신자 이메일({r})의 주소 형식이 올바르지 않습니다.")
                     return
                     
-        # 패스워드 암호화
-        sender_pwd_encrypted = ""
-        if sender_pwd:
-            try:
-                sender_pwd_encrypted = encrypt_data(sender_pwd)
-            except Exception as e:
-                QMessageBox.critical(self, "오류", f"패스워드 암호화에 실패했습니다: {e}")
-                return
-                
         # 설정 저장
         self.config_manager.set("tesseract_path", tesseract_path)
         self.config_manager.set("github_repo", github_repo)
@@ -250,7 +233,7 @@ class SettingsDialog(QDialog):
         self.config_manager.set("smtp_server", smtp_server)
         self.config_manager.set("smtp_port", smtp_port)
         self.config_manager.set("sender_email", sender_email)
-        self.config_manager.set("sender_password", sender_pwd_encrypted)
+        self.config_manager.set("sender_password", sender_pwd)
         self.config_manager.set("receiver_email", receiver_email)
         self.config_manager.set("mail_subject", mail_subject)
         self.config_manager.set("mail_body_header", mail_body_header)

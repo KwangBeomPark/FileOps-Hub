@@ -9,6 +9,7 @@ from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from src.ui.workflow_widget import WorkflowWidget
 from src.ui.toast_notification import show_toast
 from src.core.bypass_converter import BypassConverter
+from src.core.task_contracts import BypassFileConfig, BypassRunConfig, TaskValidationError
 from src.utils.logger import get_logger
 
 logger = get_logger()
@@ -508,35 +509,33 @@ class BypassTab(QWidget):
         # 스캔 리스트 리프레시 (원본 파일이 지워졌을 수 있으므로)
         self.scan_source_folder()
 
-    def get_task_info(self):
+    def build_run_config(self):
         src_dir = self.src_entry.text().strip()
         if not src_dir or src_dir.startswith("드래그 앤 드롭"):
             return None
             
         if not os.path.exists(src_dir):
-            raise ValueError(f"우회 변환 원본 폴더가 존재하지 않습니다: {src_dir}")
-            
-        # 스캔이 안 되어 있는 경우 자동 스캔
-        if not self.scanned_files:
-            self.scan_source_folder()
+            raise TaskValidationError(f"우회 변환 원본 폴더가 존재하지 않습니다: {src_dir}")
             
         if not self.scanned_files:
-            return None
+            raise TaskValidationError("우회 변환은 먼저 '대상 파일 스캔'을 실행한 뒤 통합 작업을 시작해 주세요.")
             
         inplace_mode = self.radio_inplace.isChecked()
         tgt_dir = src_dir if inplace_mode else self.tgt_entry.text().strip()
         
         if not inplace_mode and (not tgt_dir or tgt_dir.startswith("저장할 우회")):
-            raise ValueError("우회 변환 저장 폴더가 지정되지 않았습니다.")
+            raise TaskValidationError("우회 변환 저장 폴더가 지정되지 않았습니다.")
             
         if not inplace_mode and not os.path.exists(tgt_dir):
-            raise ValueError(f"우회 변환 저장 폴더가 존재하지 않습니다: {tgt_dir}")
+            raise TaskValidationError(f"우회 변환 저장 폴더가 존재하지 않습니다: {tgt_dir}")
             
         # 작업 리스트 작성
         tasks = []
         for idx in range(self.file_table.rowCount()):
             filename = self.file_table.item(idx, 0).text()
             src_file = os.path.join(src_dir, filename)
+            if not os.path.exists(src_file):
+                raise TaskValidationError(f"우회 변환 원본 파일이 존재하지 않습니다: {src_file}")
             
             tgt_ext = self.file_table.item(idx, 2).text()
             name_no_ext, _ = os.path.splitext(filename)
@@ -552,18 +551,19 @@ class BypassTab(QWidget):
                         break
                     counter += 1
                     
-            tasks.append({
-                "src": src_file,
-                "tgt": tgt_file,
-                "ext": tgt_ext,
-                "preserve_meta": self.check_preserve_meta.isChecked(),
-                "delete_original": self.check_delete_orig.isChecked()
-            })
+            tasks.append(BypassFileConfig(
+                src=src_file,
+                tgt=tgt_file,
+                ext=tgt_ext,
+                preserve_meta=self.check_preserve_meta.isChecked(),
+                delete_original=self.check_delete_orig.isChecked(),
+            ))
             
-        return {
-            "tasks": tasks,
-            "delete_original": self.check_delete_orig.isChecked()
-        }
+        return BypassRunConfig(tasks=tasks, delete_original=self.check_delete_orig.isChecked())
+
+    def get_task_info(self):
+        config = self.build_run_config()
+        return config.to_legacy_dict() if config else None
         
     def set_ui_locked(self, locked):
         for btn in self.findChildren(QPushButton):

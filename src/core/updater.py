@@ -24,7 +24,7 @@ class RedirectWithoutAuth(urllib.request.HTTPRedirectHandler):
 
 
 class AutoUpdater:
-    def __init__(self, current_version="v1.0.0", repo_owner="kwangbeom-park", repo_name="Project06_py_DataOperting"):
+    def __init__(self, current_version="v1.1.0", repo_owner="KwangBeomPark", repo_name="FileOps-Hub"):
         self.current_version = current_version
         self.repo_owner = repo_owner
         self.repo_name = repo_name
@@ -174,4 +174,3 @@ class AutoUpdater:
                 return (0,)
                 
         return parse_version(latest) > parse_version(current)
-

@@ -5,6 +5,15 @@ from datetime import datetime
 
 _logger_initialized = False
 
+
+def _configure_console_encoding(stream):
+    if hasattr(stream, "reconfigure"):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+
 def setup_logger(log_level=logging.INFO):
     """
     애플리케이션 전역 로깅 설정을 초기화합니다.
@@ -47,6 +56,7 @@ def setup_logger(log_level=logging.INFO):
     )
 
     # 1. 콘솔 핸들러 추가
+    _configure_console_encoding(sys.stdout)
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)

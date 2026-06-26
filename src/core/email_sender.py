@@ -1,7 +1,6 @@
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from src.utils.security import decrypt_data
 from src.utils.logger import get_logger
 
 logger = get_logger()
@@ -10,7 +9,7 @@ def send_email(
     smtp_server: str,
     smtp_port: int,
     sender_email: str,
-    sender_password_encrypted: str,
+    sender_password: str,
     receiver_emails: list,
     subject: str,
     body_text: str,
@@ -23,7 +22,7 @@ def send_email(
         smtp_server: SMTP 서버 주소
         smtp_port: 포트 번호 (예: 465, 587)
         sender_email: 발신자 이메일 주소
-        sender_password_encrypted: DPAPI 암호화된 발신자 비밀번호/앱 비밀번호
+        sender_password: ConfigManager에서 복호화된 발신자 비밀번호/앱 비밀번호
         receiver_emails: 수신자 이메일 주소 리스트 (또는 단일 주소 스트링)
         subject: 이메일 제목
         body_text: 이메일 본문
@@ -46,13 +45,6 @@ def send_email(
         
     if not receiver_emails:
         return False, "수신자 이메일 주소가 비어있습니다."
-        
-    # 비밀번호 복호화
-    try:
-        sender_password = decrypt_data(sender_password_encrypted)
-    except Exception as e:
-        logger.error(f"Failed to decrypt SMTP password: {e}")
-        return False, f"SMTP 비밀번호 복호화 실패: {str(e)}"
         
     # 메일 메시지 작성
     msg = MIMEMultipart()

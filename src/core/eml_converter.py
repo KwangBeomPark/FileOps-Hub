@@ -113,16 +113,41 @@ class EMLConverter:
         """
         logger.info("Installing Playwright Chromium browser...")
         try:
-            # sys.executable을 사용해 현재 파이썬 가상환경에 속한 playwright 패키지 호출
+            # Frozen EXE에서는 bundled Playwright driver를 직접 호출합니다.
+            command, env = self._get_playwright_install_command()
             subprocess.run(
-                [sys.executable, "-m", "playwright", "install", "chromium"],
+                command,
                 check=True,
-                capture_output=True
+                capture_output=True,
+                text=True,
+                env=env,
             )
             logger.info("Playwright Chromium browser installed successfully.")
+        except subprocess.CalledProcessError as e:
+            logger.error(
+                "Failed to auto-install Playwright chromium browser. stdout=%s stderr=%s",
+                e.stdout,
+                e.stderr,
+            )
+            raise Exception("Playwright 브라우저 드라이버 자동 설치에 실패했습니다. 네트워크 연결 상태를 확인해 주세요.") from e
         except Exception as e:
             logger.error(f"Failed to auto-install Playwright chromium browser: {e}")
             raise Exception("Playwright 브라우저 드라이버 자동 설치에 실패했습니다. 네트워크 연결 상태를 확인해 주세요.") from e
+
+    def _get_playwright_install_command(self):
+        try:
+            from playwright._impl._driver import compute_driver_executable, get_driver_env
+
+            node_path, cli_path = compute_driver_executable()
+            if os.path.exists(node_path) and os.path.exists(cli_path):
+                return [node_path, cli_path, "install", "chromium"], get_driver_env()
+        except Exception as driver_err:
+            logger.warning(f"Failed to resolve Playwright bundled driver: {driver_err}")
+
+        if getattr(sys, "frozen", False):
+            raise FileNotFoundError("Bundled Playwright driver was not found in the frozen application.")
+
+        return [sys.executable, "-m", "playwright", "install", "chromium"], os.environ.copy()
 
     def convert_eml_to_image(self, eml_path: str, output_path: str, width: int = 1024) -> bool:
         """

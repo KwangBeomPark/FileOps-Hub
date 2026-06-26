@@ -10,8 +10,10 @@ from PyQt6.QtCore import Qt, QTime, QTimer
 from PyQt6.QtGui import QFont, QColor
 
 # Core Modules
-from src.core.task_engine import TaskWorker
 from src.core.email_sender import send_email
+from src.core.preflight import check_run_plan
+from src.core.task_contracts import RunPlan, TaskStep, TaskValidationError
+from src.ui.task_worker import TaskWorker
 from src.utils.logger import get_logger
 
 logger = get_logger()
@@ -287,31 +289,27 @@ class TaskTab(QWidget):
         if not main_win:
             return False
             
-        # 1. 5개 탭의 get_task_info() 수집
-        tasks_dict = {}
+        # 1. 5개 탭의 명시적 실행 계약 수집
+        configs = {}
         tabs = {
-            "sync": getattr(main_win, "sync_tab", None),
-            "eml": getattr(main_win, "eml_tab", None),
-            "pdf": getattr(main_win, "pdf_tab", None),
-            "ocr": getattr(main_win, "ocr_tab", None),
-            "bypass": getattr(main_win, "bypass_tab", None)
+            TaskStep.SYNC: getattr(main_win, "sync_tab", None),
+            TaskStep.EML: getattr(main_win, "eml_tab", None),
+            TaskStep.PDF: getattr(main_win, "pdf_tab", None),
+            TaskStep.OCR: getattr(main_win, "ocr_tab", None),
+            TaskStep.BYPASS: getattr(main_win, "bypass_tab", None),
         }
         
-        active_count = 0
         try:
-            for key, tab_obj in tabs.items():
-                if tab_obj and hasattr(tab_obj, "get_task_info"):
-                    info = tab_obj.get_task_info()
-                    tasks_dict[key] = info
-                    if info is not None:
-                        active_count += 1
-                else:
-                    tasks_dict[key] = None
-        except ValueError as val_err:
+            for step, tab_obj in tabs.items():
+                if tab_obj and hasattr(tab_obj, "build_run_config"):
+                    config = tab_obj.build_run_config()
+                    if config is not None:
+                        configs[step] = config
+        except TaskValidationError as val_err:
             if scheduled:
-                self.log(f"[예약 실행] 설정 오류: {val_err}")
+                self.log(f"[예약 실행] 설정 오류: {val_err.user_message}")
             else:
-                QMessageBox.warning(self, "설정 오류", f"작업 실행을 준비하는 과정에서 설정 누락 또는 오입력이 감지되었습니다:\n\n{val_err}")
+                QMessageBox.warning(self, "설정 오류", f"작업 실행을 준비하는 과정에서 설정 누락 또는 오입력이 감지되었습니다:\n\n{val_err.user_message}")
             return False
         except Exception as ex:
             if scheduled:
@@ -319,33 +317,43 @@ class TaskTab(QWidget):
             else:
                 QMessageBox.critical(self, "오류", f"설정을 검증하는 도중 오류가 발생했습니다: {ex}")
             return False
+
+        run_plan = RunPlan(configs=configs)
             
-        if active_count == 0:
+        if run_plan.is_empty():
             if scheduled:
                 self.log("[예약 실행] 활성화된 태스크가 없습니다.")
             else:
                 QMessageBox.warning(self, "실행 대상 없음", "활성화된 태스크가 하나도 없습니다.\n각 탭에서 변환 대상이나 그룹을 설정한 후 시작해 주세요.")
             return False
-            
-        # 2. 이메일 자동 송부 세팅 검사 (옵션 체크된 경우)
-        if self.check_auto_email.isChecked():
-            smtp_server = self.config_manager.get("smtp_server", "").strip()
-            sender_email = self.config_manager.get("sender_email", "").strip()
-            receiver_email = self.config_manager.get("receiver_email", "").strip()
-            
-            if not smtp_server or not sender_email or not receiver_email:
-                if scheduled:
-                    self.log("[예약 실행] 이메일 설정이 누락되어 메일 발송 없이 작업합니다.")
-                else:
-                    reply = QMessageBox.question(
-                        self,
-                        "이메일 설정 누락",
-                        "이메일 자동 발송 옵션이 켜져 있으나, SMTP 서버/발신자/수신자 이메일 설정이 누락되었습니다.\n이메일 발송을 건너뛰고 작업을 계속 진행할까요?",
-                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                        QMessageBox.StandardButton.No
-                    )
-                    if reply == QMessageBox.StandardButton.No:
-                        return False
+
+        # 2. 활성 단계 기준 외부 의존성 사전 점검
+        preflight = check_run_plan(
+            run_plan,
+            self.config_manager,
+            auto_email=self.check_auto_email.isChecked(),
+        )
+        if preflight.has_blockers:
+            if scheduled:
+                self.log("[예약 실행] 사전 점검 차단 이슈:\n" + preflight.format(include_warnings=False))
+            else:
+                QMessageBox.critical(self, "사전 점검 실패", preflight.format(include_warnings=False))
+            return False
+
+        if preflight.warnings:
+            warning_text = preflight.format(include_warnings=True)
+            if scheduled:
+                self.log("[예약 실행] 사전 점검 경고:\n" + warning_text)
+            else:
+                reply = QMessageBox.question(
+                    self,
+                    "사전 점검 경고",
+                    warning_text + "\n\n경고를 확인했습니다. 계속 진행할까요?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.Yes,
+                )
+                if reply == QMessageBox.StandardButton.No:
+                    return False
                     
         # UI 및 탭 잠금 처리
         self.is_running = True
@@ -357,7 +365,7 @@ class TaskTab(QWidget):
         # 탭 상태 초기화
         for key in self.step_keys.keys():
             row = self.step_keys[key]
-            if tasks_dict[key] is None:
+            if TaskStep(key) not in run_plan.configs:
                 self.status_table.item(row, 1).setText("건너뜀")
                 self.status_table.item(row, 1).setForeground(QColor("#94a3b8"))
             else:
@@ -373,7 +381,7 @@ class TaskTab(QWidget):
             main_win.set_all_tabs_locked(True)
             
         # 3. TaskWorker (QThread) 생성 및 실행
-        self.worker = TaskWorker(self.config_manager, tasks_dict)
+        self.worker = TaskWorker(self.config_manager, run_plan)
         self.worker.log_signal.connect(self.log)
         self.worker.step_progress.connect(self.update_step_progress)
         self.worker.total_progress.connect(self.progress_bar.setValue)
@@ -454,7 +462,7 @@ class TaskTab(QWidget):
         smtp_server = self.config_manager.get("smtp_server", "").strip()
         smtp_port_raw = self.config_manager.get("smtp_port", "")
         sender_email = self.config_manager.get("sender_email", "").strip()
-        sender_pwd_encrypted = self.config_manager.get("sender_password", "")
+        sender_password = self.config_manager.get("sender_password", "")
         receiver_email = self.config_manager.get("receiver_email", "").strip()
         mail_subject = self.config_manager.get("mail_subject", "통합 작업 완료 결과 보고서").strip()
         mail_body_header = self.config_manager.get("mail_body_header", "").strip()
@@ -483,7 +491,7 @@ class TaskTab(QWidget):
             smtp_server=smtp_server,
             smtp_port=smtp_port,
             sender_email=sender_email,
-            sender_password_encrypted=sender_pwd_encrypted,
+            sender_password=sender_password,
             receiver_emails=receiver_email,
             subject=mail_subject,
             body_text=full_body

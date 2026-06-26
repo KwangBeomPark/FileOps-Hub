@@ -14,6 +14,8 @@ class ConfigManager:
     """
     
     DEFAULT_CONFIG = {
+        "config_version": 2,
+
         # PDF 변환 설정
         "output_folder": "",
         "last_pdf_directory": "",
@@ -64,7 +66,7 @@ class ConfigManager:
         "smtp_server": "",
         "smtp_port": "",
         "sender_email": "",
-        "sender_password": "",         # SettingsDialog에서 DPAPI 암호화 후 저장
+        "sender_password": "",         # DPAPI로 암호화되어 저장
         "receiver_email": "",
         "mail_subject": "통합 작업 완료 결과 보고서",
         "mail_body_header": "",
@@ -75,7 +77,7 @@ class ConfigManager:
     }
     
     # DPAPI로 자동 암복호화할 보안 키 목록
-    SECURE_KEYS = ["github_token"]
+    SECURE_KEYS = ["github_token", "sender_password"]
 
     def __init__(self, config_file="setting_integrated.json"):
         self.config_file = config_file
@@ -112,7 +114,10 @@ class ConfigManager:
                     with open(self.config_path, 'r', encoding='utf-8') as f:
                         loaded = json.load(f)
                         config.update(loaded)
+                        migrated = self._migrate_config(config, loaded)
                     logger.debug(f"Configuration loaded successfully from {self.config_path}")
+                    if migrated:
+                        self._save_config_raw(config)
                 except Exception as e:
                     logger.error(f"Error loading configuration file ({self.config_path}): {e}")
                     # 손상된 설정 파일 백업 및 초기 복원
@@ -131,6 +136,20 @@ class ConfigManager:
                 # 초기 생성
                 self._save_config_raw(config)
             return config
+
+    def _migrate_config(self, config: dict, loaded: dict) -> bool:
+        """기존 사용자 설정 파일을 삭제하지 않고 현재 스키마로 보강합니다."""
+        migrated = False
+        version = int(loaded.get("config_version", 1) or 1)
+        if version < 2:
+            # v1의 sender_password는 SettingsDialog에서 이미 DPAPI 암호문으로 저장되던 값입니다.
+            # ConfigManager 보안 키로 편입하되 값을 다시 암호화하지 않습니다.
+            config["config_version"] = 2
+            migrated = True
+        if "config_version" not in loaded:
+            config["config_version"] = 2
+            migrated = True
+        return migrated
 
     def save_config(self) -> bool:
         """현재 설정을 스레드 안전하게 JSON 파일로 기록합니다."""

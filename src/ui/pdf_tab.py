@@ -11,6 +11,7 @@ from src.ui.image_preview_dialog import ImagePreviewDialog
 
 from src.core.pdf_converter import PDFConverter
 from src.core.file_manager import FileManager
+from src.core.task_contracts import PdfRunConfig, TaskValidationError
 from src.utils.logger import get_logger
 
 logger = get_logger()
@@ -304,23 +305,24 @@ class PDFTab(QWidget):
         self.pdf_summary_label.setText(f"선택된 PDF: {len(self.selected_pdf_paths)}개")
         self.result_summary_label.setText(f"생성 이미지: {len(self.image_files)}개")
 
-    def get_task_info(self):
+    def build_run_config(self):
         if not self.selected_pdf_paths:
             return None
             
         output_folder = self.output_path_input.text().strip()
         if not output_folder:
-            raise ValueError("PDF 변환 저장 폴더가 지정되지 않았습니다.")
+            raise TaskValidationError("PDF 변환 저장 폴더가 지정되지 않았습니다.")
             
         # PDF 파일들의 실제 존재 여부 검사
         for path in self.selected_pdf_paths:
             if not os.path.exists(path):
-                raise ValueError(f"변환할 PDF 파일이 존재하지 않습니다: {path}")
+                raise TaskValidationError(f"변환할 PDF 파일이 존재하지 않습니다: {path}")
                 
-        return {
-            "pdf_paths": self.selected_pdf_paths,
-            "output_folder": output_folder
-        }
+        return PdfRunConfig(pdf_paths=list(self.selected_pdf_paths), output_folder=output_folder)
+
+    def get_task_info(self):
+        config = self.build_run_config()
+        return config.to_legacy_dict() if config else None
         
     def set_ui_locked(self, locked):
         for btn in self.findChildren(QPushButton):

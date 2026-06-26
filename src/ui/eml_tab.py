@@ -8,6 +8,7 @@ from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QColor, QBrush
 
 from src.core.eml_converter import EMLConverter
+from src.core.task_contracts import EmlRunConfig, EmlTaskConfig, TaskValidationError
 from src.ui.eml_task_dialog import EMLTaskDialog
 from src.ui.toast_notification import show_toast
 from src.utils.logger import get_logger
@@ -451,24 +452,27 @@ class EMLTab(QWidget):
         sb = self.log_area.verticalScrollBar()
         sb.setValue(sb.maximum())
 
-    def get_task_info(self):
+    def build_run_config(self):
         if not self.tasks:
             return None
             
+        run_tasks = []
         for idx, task in enumerate(self.tasks):
             src = task.get("source_folder", "").strip()
             tgt = task.get("target_folder", "").strip()
             name = task.get("name", f"태스크 {idx+1}")
             
             if not src:
-                raise ValueError(f"EML 태스크 '{name}'의 소스 폴더 경로가 입력되지 않았습니다.")
+                raise TaskValidationError(f"EML 태스크 '{name}'의 소스 폴더 경로가 입력되지 않았습니다.")
             if not os.path.exists(src):
-                raise ValueError(f"EML 태스크 '{name}'의 소스 폴더가 존재하지 않습니다: {src}")
+                raise TaskValidationError(f"EML 태스크 '{name}'의 소스 폴더가 존재하지 않습니다: {src}")
             if not tgt:
-                raise ValueError(f"EML 태스크 '{name}'의 저장 폴더 경로가 입력되지 않았습니다.")
+                raise TaskValidationError(f"EML 태스크 '{name}'의 저장 폴더 경로가 입력되지 않았습니다.")
+            run_tasks.append(EmlTaskConfig(name=name, source_folder=src, target_folder=tgt))
                 
         width = int(self.config_manager.get("eml_output_width", 1024))
-        return {
-            "tasks": self.tasks,
-            "width": width
-        }
+        return EmlRunConfig(tasks=run_tasks, width=width)
+
+    def get_task_info(self):
+        config = self.build_run_config()
+        return config.to_legacy_dict() if config else None

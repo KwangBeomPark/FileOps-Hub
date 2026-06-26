@@ -20,12 +20,14 @@
 - `Bypass Convert`: Office COM을 사용한 Excel/PowerPoint/Word 변환과 PDF ZIP 패키징
 - `Task Runner`: 활성 작업 순차 실행, 매일 예약 실행, SMTP 결과 보고, 실패 시 로컬 보고서 저장
 
+통합 실행은 각 기능 탭의 `build_run_config()`가 만든 명시적 실행 계약을 `RunPlan`으로 묶고, 공통 preflight 후 PyQt 없는 core 실행 엔진에서 순차 처리합니다. UI 스레드는 진행 상태와 취소 신호만 연결합니다.
+
 ## 실행 환경
 
-- Windows 10/11, Python 3.14
+- Windows 10/11, Python 3.13 이상 권장
 - Office 변환: 해당 PC에 Microsoft Excel/Word/PowerPoint 설치 필요
 - OCR: Tesseract 설치 후 `Settings`에서 `tesseract.exe` 지정
-- EML 이미지: `python -m playwright install chromium`으로 Chromium 준비
+- EML 이미지: 소스 실행 시 `python -m playwright install chromium`으로 Chromium 준비. 패키징된 EXE는 Playwright driver를 포함하며, Chromium이 없으면 최초 변환 시 설치를 시도합니다.
 
 ```powershell
 python -m pip install -r requirements.txt
@@ -48,6 +50,14 @@ python -m compileall -q src tools
 python -m unittest discover -s tools -p "test_*.py" -v
 python -m ruff check src tools --select E9,F,B
 python tools/build_all.py
+```
+
+설치 파일은 Git 소스 zip/clone에 포함되지 않습니다. 배포 대상 PC는 GitHub Releases의 `IntegratedDataTool_Setup_vX.Y.Z.exe`를 받거나, 위 명령으로 먼저 `dist/` 산출물을 빌드해야 합니다. 설치 장애 대응 절차는 `INSTALL_DEFENSE_PLAN.md`를 확인합니다.
+
+설치/런타임 사전 점검:
+
+```powershell
+python tools/diagnose_install.py --check-browser
 ```
 
 설정과 로그는 `%LOCALAPPDATA%\IntegratedDataTool`에 저장됩니다. GitHub 토큰과 SMTP 비밀번호는 Windows DPAPI로 암호화합니다.

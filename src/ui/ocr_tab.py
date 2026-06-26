@@ -11,6 +11,7 @@ from src.ui.image_preview_dialog import ImagePreviewDialog
 
 from src.core.ocr_processor import OCRProcessor
 from src.core.file_manager import FileManager
+from src.core.task_contracts import OcrRunConfig, TaskValidationError
 from src.utils.logger import get_logger
 
 logger = get_logger()
@@ -382,7 +383,7 @@ class OCRTab(QWidget):
             
         self.image_summary_label.setText(f"불러온 이미지: {total}개 (선택됨: {checked}개)")
 
-    def get_task_info(self):
+    def build_run_config(self):
         checked_paths = []
         for idx in range(self.image_list_widget.count()):
             item = self.image_list_widget.item(idx)
@@ -394,16 +395,18 @@ class OCRTab(QWidget):
             
         # Tesseract 설치 체크
         if not self.ocr_processor.check_tesseract_installed():
-            raise ValueError("Tesseract OCR 프로그램이 시스템에 설치되어 있지 않거나 설정된 실행 파일 경로가 올바르지 않습니다. Settings를 확인하세요.")
+            raise TaskValidationError("Tesseract OCR 프로그램이 시스템에 설치되어 있지 않거나 설정된 실행 파일 경로가 올바르지 않습니다. Settings를 확인하세요.")
             
         # 이미지 파일들의 실제 존재 여부 검사
         for path in checked_paths:
             if not os.path.exists(path):
-                raise ValueError(f"분석할 이미지 파일이 존재하지 않습니다: {path}")
+                raise TaskValidationError(f"분석할 이미지 파일이 존재하지 않습니다: {path}")
                 
-        return {
-            "image_paths": checked_paths
-        }
+        return OcrRunConfig(image_paths=checked_paths)
+
+    def get_task_info(self):
+        config = self.build_run_config()
+        return config.to_legacy_dict() if config else None
         
     def set_ui_locked(self, locked):
         for btn in self.findChildren(QPushButton):

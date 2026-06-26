@@ -9,6 +9,7 @@ from PyQt6.QtCore import QThread, pyqtSignal
 from PyQt6.QtGui import QColor, QBrush, QFont
 
 from src.core.sync_manager import SyncManager
+from src.core.task_contracts import SyncGroupConfig, SyncRunConfig, TaskValidationError
 from src.ui.toast_notification import show_toast
 from src.utils.logger import get_logger
 
@@ -554,7 +555,7 @@ class SyncTab(QWidget):
             show_toast(self, "동기화 오류 발생", "error")
             QMessageBox.critical(self, "오류", "작업 도중 치명적인 에러가 발생했습니다:\n" + "\n".join(errors))
 
-    def get_task_info(self):
+    def build_run_config(self):
         valid_groups = [g for g in self.sync_groups if len(g.get("folders", [])) >= 2]
         if not valid_groups:
             return None
@@ -562,11 +563,23 @@ class SyncTab(QWidget):
         for group in self.sync_groups:
             folders = group.get("folders", [])
             if 0 < len(folders) < 2:
-                raise ValueError(f"동기화 그룹 '{group['name']}'에 등록된 폴더가 2개 미만입니다. 최소 2개의 폴더를 등록해야 합니다.")
+                raise TaskValidationError(f"동기화 그룹 '{group['name']}'에 등록된 폴더가 2개 미만입니다. 최소 2개의 폴더를 등록해야 합니다.")
                 
-        return {
-            "sync_groups": self.sync_groups
-        }
+        move_to_deleted = bool(self.config_manager.get("sync_move_to_deleted", True))
+        return SyncRunConfig(
+            sync_groups=[
+                SyncGroupConfig(
+                    name=group.get("name", f"그룹 {idx + 1}"),
+                    folders=list(group.get("folders", [])),
+                    move_to_deleted=bool(group.get("move_to_deleted", move_to_deleted)),
+                )
+                for idx, group in enumerate(valid_groups)
+            ]
+        )
+
+    def get_task_info(self):
+        config = self.build_run_config()
+        return config.to_legacy_dict() if config else None
         
     def set_ui_locked(self, locked):
         self.set_ui_enabled(not locked)

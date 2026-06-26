@@ -1,0 +1,39 @@
+import json
+import os
+import tempfile
+import unittest
+from unittest.mock import patch
+
+from src.utils.config_manager import ConfigManager
+from src.utils.security import encrypt_data
+
+
+class ConfigSecurityTests(unittest.TestCase):
+    def test_sender_password_is_managed_as_secure_key(self):
+        with tempfile.TemporaryDirectory() as temp_dir, patch.dict(os.environ, {"LOCALAPPDATA": temp_dir}, clear=False):
+            manager = ConfigManager("settings.json")
+            self.assertTrue(manager.set("sender_password", "plain-secret"))
+            self.assertEqual(manager.get("sender_password"), "plain-secret")
+
+            with open(manager.config_path, "r", encoding="utf-8") as file:
+                raw = json.load(file)
+
+            self.assertNotEqual(raw["sender_password"], "plain-secret")
+            self.assertEqual(raw["config_version"], 2)
+
+    def test_v1_sender_password_migrates_without_double_encryption(self):
+        with tempfile.TemporaryDirectory() as temp_dir, patch.dict(os.environ, {"LOCALAPPDATA": temp_dir}, clear=False):
+            app_dir = os.path.join(temp_dir, "IntegratedDataTool")
+            os.makedirs(app_dir, exist_ok=True)
+            config_path = os.path.join(app_dir, "settings.json")
+            encrypted = encrypt_data("legacy-secret")
+            with open(config_path, "w", encoding="utf-8") as file:
+                json.dump({"sender_password": encrypted}, file)
+
+            manager = ConfigManager("settings.json")
+            self.assertEqual(manager.get("sender_password"), "legacy-secret")
+            self.assertEqual(manager.get("config_version"), 2)
+
+
+if __name__ == "__main__":
+    unittest.main()
