@@ -22,12 +22,20 @@ class FakeConfig:
 class PreflightTests(unittest.TestCase):
     def test_ocr_dependency_failure_is_blocker(self):
         plan = RunPlan({TaskStep.OCR: OcrRunConfig(["image.png"])})
-        with patch("src.core.preflight.check_tesseract", return_value=(False, "missing")):
+        with patch("src.core.preflight.check_ocr_engines", return_value=(False, "missing", False)):
             report = check_run_plan(plan, FakeConfig())
 
         self.assertTrue(report.has_blockers)
         self.assertEqual(report.blockers[0].level, IssueLevel.BLOCKER)
         self.assertEqual(report.blockers[0].step, TaskStep.OCR)
+
+    def test_ocr_windows_fallback_is_warning_not_blocker(self):
+        plan = RunPlan({TaskStep.OCR: OcrRunConfig(["image.png"])})
+        with patch("src.core.preflight.check_ocr_engines", return_value=(True, "fallback", True)):
+            report = check_run_plan(plan, FakeConfig())
+
+        self.assertFalse(report.has_blockers)
+        self.assertEqual(report.warnings[0].step, TaskStep.OCR)
 
     def test_bypass_office_tasks_emit_warning_when_not_deep_checking_com(self):
         config = BypassRunConfig(

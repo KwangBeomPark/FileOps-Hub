@@ -18,6 +18,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.core.preflight import (
+    check_ocr_engines as preflight_check_ocr_engines,
     check_github_updater_settings as preflight_check_github_updater_settings,
     check_office_apps as preflight_check_office_apps,
     check_playwright_driver as preflight_check_playwright_driver,
@@ -116,8 +117,12 @@ def find_iscc() -> str | None:
 
 def check_tesseract() -> bool:
     config_manager = type("Config", (), {"get": lambda _self, _key, default="": default})()
-    ok, detail = preflight_check_tesseract(config_manager)
-    return status(True, "Tesseract OCR", detail) if ok else warn("Tesseract OCR", detail)
+    ok, detail, using_fallback = preflight_check_ocr_engines(config_manager)
+    if ok and not using_fallback:
+        return status(True, "OCR engine", detail)
+    if ok:
+        return warn("OCR engine", detail)
+    return status(False, "OCR engine", detail)
 
 
 def check_playwright_runtime(check_browser: bool) -> bool:

@@ -18,6 +18,8 @@
 - `src/core/preflight.py`를 추가하고 `tools/diagnose_install.py`가 같은 점검 로직을 재사용하도록 정리했습니다.
 - `sender_password`를 `ConfigManager.SECURE_KEYS`에 포함하고 SettingsDialog/email_sender의 수동 암복호화를 제거했습니다.
 - `tools/build_all.py`와 `tools/diagnose_install.py`가 Inno Setup 기본 설치 경로도 탐색하도록 보강했습니다.
+- Tesseract가 없을 때 Windows 내장 OCR(`Windows.Media.Ocr`)로 자동 fallback하도록 보강했습니다.
+- 앱 전역 Fusion 다크 팔레트와 툴팁 다크 스타일을 추가했습니다.
 
 ## 추가 테스트
 
@@ -25,6 +27,7 @@
 - 탭별 `build_run_config()` 정상/검증 실패
 - `sender_password` DPAPI 암복호화와 v1 설정 마이그레이션
 - OCR, Office, SMTP preflight
+- Tesseract 실패 시 Windows OCR fallback
 - 순수 `TaskRunner` 성공/부분 실패 report
 - GitHub 업데이트 asset 선택, HTTPS/domain 방어, 불완전 다운로드 삭제
 
@@ -44,8 +47,9 @@
   - 경고: Tesseract 미설치/PATH 미설정, GitHub updater 저장소 미설정, 현재 PC의 Office COM 미등록
 - `python tools/build_all.py`: PyInstaller exe 및 Inno Setup installer 빌드 성공
 - `dist/IntegratedDataTool.exe` 8초 기동 스모크: 통과
-- `dist/IntegratedDataTool_Setup_v1.1.0.exe` 무인 설치, 설치된 EXE 8초 기동, 무인 제거 스모크: 통과
-- EXE 크기: 102,350,066 bytes
-- EXE SHA-256: `BB97C39B71B18817B9D6DB3F206215917C9D8541FAD2A4684AC44A9E1B66A369`
-- Installer 크기: 103,915,052 bytes
-- Installer SHA-256: `740B18663DE27075FEF20DDD7693CEC9273E7B0AC70C6FEA48A603F74E64B7AD`
+- 실제 Windows OCR fallback 샘플: Tesseract 없이 `PL-ATSZ-20261234-6789` 추출 성공
+- `dist/IntegratedDataTool_Setup_v1.1.1.exe` 무인 설치, 설치된 EXE 8초 기동, 무인 제거 스모크: 통과
+- EXE 크기: 102,354,870 bytes
+- EXE SHA-256: `2B90B29013109FF5BC658046935C5DF1C83BC794E995A9B67D838EDC78B4B80C`
+- Installer 크기: 103,916,969 bytes
+- Installer SHA-256: `EF316F701EC234A29E0D85CF7874794529F8D0431E458D6C54D399E2095D81A7`

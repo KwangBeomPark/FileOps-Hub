@@ -62,7 +62,7 @@ class UpdaterTests(unittest.TestCase):
             b'{"tag_name":"v1.0.1","body":"notes","assets":['
             b'{"name":"source.zip","browser_download_url":"https://github.com/a/source.zip"},'
             b'{"name":"IntegratedDataTool.exe","browser_download_url":"https://github.com/a/app.exe"},'
-            b'{"name":"IntegratedDataTool_Setup_v1.1.0.exe","browser_download_url":"https://github.com/a/setup.exe"}'
+            b'{"name":"IntegratedDataTool_Setup_v1.1.1.exe","browser_download_url":"https://github.com/a/setup.exe"}'
             b"]}"
         )
         updater = AutoUpdater(current_version="v1.0.0")

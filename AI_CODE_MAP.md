@@ -46,7 +46,7 @@ src/ui/task_worker.py(QThread 어댑터) -> src/ui/task_tab.py 진행 UI/메일/
 - `src/core/sync_manager.py`: 다중 폴더 최신본 분석과 동기화 실행.
 - `src/core/eml_converter.py`: EML 파싱, Playwright HTML 렌더링, frozen exe 환경의 driver 호출 방어.
 - `src/core/pdf_converter.py`: PDF 페이지 이미지 렌더링.
-- `src/core/ocr_processor.py`: Tesseract OCR 실행과 프로모션 번호 추출.
+- `src/core/ocr_processor.py`: Tesseract 우선 OCR, Windows 내장 OCR fallback, 프로모션 번호 추출.
 - `src/core/bypass_converter.py`: Office COM 포맷 변환과 PDF zip 우회 변환.
 - `src/core/email_sender.py`: ConfigManager에서 복호화된 SMTP 비밀번호를 받아 메일을 발송합니다. 암복호화는 직접 수행하지 않습니다.
 - `src/core/updater.py`: GitHub Releases 업데이트 확인과 다운로드 방어.
@@ -63,7 +63,7 @@ src/ui/task_worker.py(QThread 어댑터) -> src/ui/task_tab.py 진행 UI/메일/
 
 ## 5. 외부 의존성 방어
 
-- OCR: Tesseract 설치 또는 Settings의 `tesseract.exe` 경로가 필요합니다.
+- OCR: Tesseract가 있으면 우선 사용하고, 없으면 Windows 내장 OCR로 fallback합니다. 둘 다 사용할 수 없으면 OCR 단계가 차단됩니다.
 - EML: Playwright Python 패키지와 driver가 필요합니다. 소스 실행 환경에서는 `python -m playwright install chromium`을 사용하고, 패키징된 exe는 bundled driver를 통해 Chromium 준비를 시도합니다.
 - Bypass Office 변환: pywin32와 Microsoft Excel/Word/PowerPoint COM 설치 상태에 의존합니다.
 - SMTP: 서버, 발신자, 수신자 설정이 없으면 작업은 계속 가능하지만 메일 발송 대신 로컬 보고서가 남을 수 있습니다.
@@ -97,3 +97,4 @@ python tools/build_all.py
 - 2026-06-26: 통합 실행 구조를 `task_contracts` + 순수 `task_runner` + UI `task_worker`로 분리했습니다. 각 탭은 `build_run_config()` 계약으로 연결하고, `TaskValidationError`와 공통 preflight로 검증 흐름을 통일했습니다.
 - 2026-06-26: `sender_password`를 `ConfigManager.SECURE_KEYS`에 포함하고 SettingsDialog/email_sender의 중복 암복호화를 제거했습니다. 기존 암호화 SMTP 비밀번호를 유지하는 `config_version=2` 마이그레이션을 추가했습니다.
 - 2026-06-26: 설치 방어를 위해 `tools/build_all.py`, `tools/diagnose_install.py`, Inno Setup 탐색 경로, Playwright frozen exe driver 호출 방어, 업데이트 다운로드 방어 테스트를 정리했습니다.
+- 2026-06-27: Tesseract가 없을 때 Windows 내장 OCR fallback을 사용하도록 보강하고, Fusion 기반 전역 다크 팔레트를 추가했습니다.

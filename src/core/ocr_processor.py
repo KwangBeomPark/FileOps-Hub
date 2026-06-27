@@ -3,8 +3,14 @@ from PIL import Image
 import re
 import os
 
+from src.core.windows_ocr import extract_text_with_windows_ocr, windows_ocr_available
+
 class OCRProcessor:
-    """이미지에서 텍스트를 추출하고 프로모션 번호를 찾는 클래스"""
+    """이미지에서 텍스트를 추출하고 프로모션 번호를 찾는 클래스.
+
+    Tesseract를 우선 사용하고, 설치되어 있지 않거나 실행에 실패하면 Windows
+    내장 OCR(Windows.Media.Ocr)로 폴백합니다.
+    """
     
     def __init__(self, config_manager):
         """
@@ -45,6 +51,21 @@ class OCRProcessor:
             return True
         except Exception:
             return False
+
+    def check_windows_ocr_available(self):
+        ok, _detail = windows_ocr_available()
+        return ok
+
+    def check_ocr_available(self):
+        return self.check_tesseract_installed() or self.check_windows_ocr_available()
+
+    def describe_available_ocr(self):
+        if self.check_tesseract_installed():
+            return "Tesseract OCR 사용 가능"
+        ok, detail = windows_ocr_available()
+        if ok:
+            return "Windows 내장 OCR fallback 사용 가능"
+        return f"사용 가능한 OCR 엔진이 없습니다: {detail}"
     
     def extract_text(self, image_path):
         """이미지에서 텍스트 추출
@@ -58,12 +79,23 @@ class OCRProcessor:
         Raises:
             Exception: OCR 실패 시
         """
+        errors = []
+
+        if self.check_tesseract_installed():
+            try:
+                with Image.open(image_path) as image:
+                    text = pytesseract.image_to_string(image, lang='eng')
+                return text.strip()
+            except Exception as e:
+                errors.append(f"Tesseract 실패: {e}")
+
         try:
-            image = Image.open(image_path)
-            text = pytesseract.image_to_string(image, lang='eng')
+            text = extract_text_with_windows_ocr(image_path)
             return text.strip()
         except Exception as e:
-            raise Exception(f"OCR 텍스트 추출 실패: {str(e)}") from e
+            errors.append(f"Windows OCR 실패: {e}")
+
+        raise Exception("OCR 텍스트 추출 실패: " + " / ".join(errors))
     
     def find_promotion_number(self, text):
         """텍스트에서 프로모션 번호 찾기

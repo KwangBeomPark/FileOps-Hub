@@ -10,7 +10,7 @@ if src_path not in sys.path:
     sys.path.insert(0, src_path)
 
 from PyQt6.QtWidgets import QApplication
-from src.ui.main_window import MainWindow, APP_STYLESHEET
+from src.ui.main_window import MainWindow, APP_STYLESHEET, create_dark_palette
 from src.utils.logger import setup_logger
 
 def main():
@@ -18,6 +18,8 @@ def main():
     setup_logger()
     
     app = QApplication(sys.argv)
+    app.setStyle("Fusion")
+    app.setPalette(create_dark_palette())
     app.setStyleSheet(APP_STYLESHEET)
     window = MainWindow()
     window.show()

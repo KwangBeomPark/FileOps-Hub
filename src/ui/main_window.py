@@ -1,5 +1,5 @@
 from PyQt6.QtWidgets import QMainWindow, QTabWidget, QMessageBox, QStatusBar, QProgressDialog
-from PyQt6.QtGui import QAction
+from PyQt6.QtGui import QAction, QColor, QPalette
 from PyQt6.QtCore import QThread, pyqtSignal, Qt
 import os
 import tempfile
@@ -229,13 +229,34 @@ QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
 QCheckBox {
     color: #cbd5e1;
 }
+QToolTip {
+    background-color: #252526;
+    color: #e2e8f0;
+    border: 1px solid #3e3e3e;
+}
 """
+
+
+def create_dark_palette():
+    palette = QPalette()
+    palette.setColor(QPalette.ColorRole.Window, QColor("#1e1e1e"))
+    palette.setColor(QPalette.ColorRole.WindowText, QColor("#e2e8f0"))
+    palette.setColor(QPalette.ColorRole.Base, QColor("#1e1e1e"))
+    palette.setColor(QPalette.ColorRole.AlternateBase, QColor("#252526"))
+    palette.setColor(QPalette.ColorRole.ToolTipBase, QColor("#252526"))
+    palette.setColor(QPalette.ColorRole.ToolTipText, QColor("#e2e8f0"))
+    palette.setColor(QPalette.ColorRole.Text, QColor("#e2e8f0"))
+    palette.setColor(QPalette.ColorRole.Button, QColor("#2d2d2d"))
+    palette.setColor(QPalette.ColorRole.ButtonText, QColor("#e2e8f0"))
+    palette.setColor(QPalette.ColorRole.Highlight, QColor("#0e639c"))
+    palette.setColor(QPalette.ColorRole.HighlightedText, QColor("#ffffff"))
+    return palette
 
 
 class UpdateWorker(QThread):
     finished = pyqtSignal(bool, str, str, str) # has_update, latest_version, download_url, release_notes
     
-    def __init__(self, current_version="v1.1.0"):
+    def __init__(self, current_version="v1.1.1"):
         super().__init__()
         self.updater = AutoUpdater(current_version=current_version)
         
@@ -278,7 +299,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.config_manager = ConfigManager()
-        self.current_version = "v1.1.0" # 현재 애플리케이션 버전
+        self.current_version = "v1.1.1" # 현재 애플리케이션 버전
         self.update_worker = None
         self.init_ui()
         

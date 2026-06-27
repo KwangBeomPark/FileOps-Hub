@@ -72,6 +72,27 @@ def check_tesseract(config_manager) -> tuple[bool, str]:
         return False, str(exc)
 
 
+def check_windows_ocr() -> tuple[bool, str]:
+    try:
+        from src.core.windows_ocr import windows_ocr_available
+
+        return windows_ocr_available()
+    except Exception as exc:
+        return False, str(exc)
+
+
+def check_ocr_engines(config_manager) -> tuple[bool, str, bool]:
+    tesseract_ok, tesseract_detail = check_tesseract(config_manager)
+    if tesseract_ok:
+        return True, tesseract_detail, False
+
+    windows_ok, windows_detail = check_windows_ocr()
+    if windows_ok:
+        return True, f"Tesseract는 사용할 수 없지만 Windows 내장 OCR fallback 사용 가능 ({tesseract_detail})", True
+
+    return False, f"Tesseract 실패: {tesseract_detail}\nWindows OCR 실패: {windows_detail}", False
+
+
 def check_playwright_driver(check_browser: bool = False) -> tuple[bool, str]:
     try:
         from playwright._impl._driver import compute_driver_executable
@@ -169,9 +190,11 @@ def check_run_plan(
     report = PreflightReport()
 
     if TaskStep.OCR in run_plan.configs:
-        ok, detail = check_tesseract(config_manager)
+        ok, detail, using_fallback = check_ocr_engines(config_manager)
         if not ok:
-            report.add_blocker("Tesseract OCR을 사용할 수 없습니다.", detail, TaskStep.OCR)
+            report.add_blocker("사용 가능한 OCR 엔진이 없습니다.", detail, TaskStep.OCR)
+        elif using_fallback:
+            report.add_warning("Tesseract 대신 Windows 내장 OCR로 진행합니다.", detail, TaskStep.OCR)
 
     if TaskStep.EML in run_plan.configs:
         ok, detail = check_playwright_driver(check_browser=check_browser)

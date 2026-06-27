@@ -26,7 +26,7 @@
 
 - Windows 10/11, Python 3.13 이상 권장
 - Office 변환: 해당 PC에 Microsoft Excel/Word/PowerPoint 설치 필요
-- OCR: Tesseract 설치 후 `Settings`에서 `tesseract.exe` 지정
+- OCR: Tesseract가 있으면 우선 사용하고, 없으면 Windows 내장 OCR로 자동 fallback합니다. Tesseract를 쓰려면 `Settings`에서 `tesseract.exe`를 지정할 수 있습니다.
 - EML 이미지: 소스 실행 시 `python -m playwright install chromium`으로 Chromium 준비. 패키징된 EXE는 Playwright driver를 포함하며, Chromium이 없으면 최초 변환 시 설치를 시도합니다.
 
 ```powershell

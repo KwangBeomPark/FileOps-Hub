@@ -33,9 +33,9 @@ class OCRWorker(QThread):
         
     def run(self):
         try:
-            # 1. Tesseract 설치 확인
-            if not self.ocr_processor.check_tesseract_installed():
-                self.finished.emit(False, "Tesseract가 설치되어 있지 않거나 경로가 잘못되었습니다. Settings를 확인하세요.")
+            # 1. OCR 엔진 확인: Tesseract 우선, 없으면 Windows 내장 OCR fallback
+            if not self.ocr_processor.check_ocr_available():
+                self.finished.emit(False, "사용 가능한 OCR 엔진이 없습니다. Tesseract를 설치하거나 Windows OCR 언어팩을 확인하세요.")
                 return
                 
             total_images = len(self.image_paths)
@@ -393,9 +393,8 @@ class OCRTab(QWidget):
         if not checked_paths:
             return None
             
-        # Tesseract 설치 체크
-        if not self.ocr_processor.check_tesseract_installed():
-            raise TaskValidationError("Tesseract OCR 프로그램이 시스템에 설치되어 있지 않거나 설정된 실행 파일 경로가 올바르지 않습니다. Settings를 확인하세요.")
+        if not self.ocr_processor.check_ocr_available():
+            raise TaskValidationError("사용 가능한 OCR 엔진이 없습니다. Tesseract를 설치하거나 Windows OCR 언어팩을 확인하세요.")
             
         # 이미지 파일들의 실제 존재 여부 검사
         for path in checked_paths:

@@ -29,12 +29,12 @@ class SettingsDialog(QDialog):
         container.setLayout(container_layout)
         
         # 1. OCR 설정 그룹
-        ocr_group = QGroupBox("OCR / Tesseract Settings")
+        ocr_group = QGroupBox("OCR Settings")
         ocr_form = QFormLayout()
         ocr_group.setLayout(ocr_form)
         
         self.tesseract_path_input = QLineEdit()
-        self.tesseract_path_input.setPlaceholderText("예: C:\\Program Files\\Tesseract-OCR\\tesseract.exe")
+        self.tesseract_path_input.setPlaceholderText("선택 사항: C:\\Program Files\\Tesseract-OCR\\tesseract.exe")
         
         btn_layout = QHBoxLayout()
         btn_layout.addWidget(self.tesseract_path_input)
