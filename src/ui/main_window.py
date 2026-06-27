@@ -1,4 +1,17 @@
-from PyQt6.QtWidgets import QMainWindow, QTabWidget, QMessageBox, QStatusBar, QProgressDialog
+from PyQt6.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QMessageBox,
+    QProgressDialog,
+    QPushButton,
+    QSizePolicy,
+    QStatusBar,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
 from PyQt6.QtGui import QAction, QColor, QPalette
 from PyQt6.QtCore import QThread, pyqtSignal, Qt
 import os
@@ -234,6 +247,45 @@ QToolTip {
     color: #e2e8f0;
     border: 1px solid #3e3e3e;
 }
+QFrame#UpdateBanner {
+    background-color: #17324d;
+    border-bottom: 1px solid #25638f;
+}
+QLabel#UpdateBannerTitle {
+    color: #ffffff;
+    font-weight: bold;
+    font-size: 10.5pt;
+}
+QLabel#UpdateBannerBody {
+    color: #dbeafe;
+}
+QPushButton#UpdateBannerPrimary {
+    background-color: #38bdf8;
+    color: #0f172a;
+    border: 1px solid #7dd3fc;
+    font-weight: bold;
+    min-height: 26px;
+    padding: 5px 10px;
+}
+QPushButton#UpdateBannerSecondary {
+    background-color: #214760;
+    color: #e0f2fe;
+    border: 1px solid #3b7190;
+    min-height: 26px;
+    padding: 5px 10px;
+}
+QPushButton#UpdateBannerClose {
+    background-color: transparent;
+    color: #dbeafe;
+    border: none;
+    font-size: 12pt;
+    font-weight: bold;
+    min-width: 28px;
+    padding: 4px;
+}
+QPushButton#UpdateBannerClose:hover {
+    background-color: #2b5874;
+}
 """
 
 
@@ -254,15 +306,15 @@ def create_dark_palette():
 
 
 class UpdateWorker(QThread):
-    finished = pyqtSignal(bool, str, str, str) # has_update, latest_version, download_url, release_notes
+    finished = pyqtSignal(bool, str, str, str, str) # has_update, latest_version, download_url, release_notes, error
     
-    def __init__(self, current_version="v1.1.1"):
+    def __init__(self, current_version="v1.1.2"):
         super().__init__()
         self.updater = AutoUpdater(current_version=current_version)
         
     def run(self):
         has_update, latest, url, notes = self.updater.check_for_updates()
-        self.finished.emit(has_update, latest, url or "", notes)
+        self.finished.emit(has_update, latest, url or "", notes, self.updater.last_error)
 
 
 class DownloadWorker(QThread):
@@ -299,15 +351,14 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.config_manager = ConfigManager()
-        self.current_version = "v1.1.1" # 현재 애플리케이션 버전
+        self.current_version = "v1.1.2" # 현재 애플리케이션 버전
         self.update_worker = None
+        self.update_download_url = ""
+        self.update_release_url = ""
         self.init_ui()
         
-        # 저장소가 설정된 경우에만 시작 시 백그라운드 업데이트 확인
-        if (
-            self.config_manager.get("auto_check_update", "on_start") == "on_start"
-            and self.config_manager.get("github_repo", "").strip()
-        ):
+        # 시작 시 백그라운드 업데이트 확인. 저장소 설정이 비어 있으면 AutoUpdater 기본 저장소를 사용합니다.
+        if self.config_manager.get("auto_check_update", "on_start") == "on_start":
             self.trigger_update_check(silent=True)
         
     def init_ui(self):
@@ -321,10 +372,21 @@ class MainWindow(QMainWindow):
             self.resize(1200, 800)
         self.move(100, 100)
         
+        # 중앙 레이아웃: 업데이트 배너 + 탭 위젯
+        central_widget = QWidget()
+        central_layout = QVBoxLayout()
+        central_layout.setContentsMargins(0, 0, 0, 0)
+        central_layout.setSpacing(0)
+        central_widget.setLayout(central_layout)
+        self.setCentralWidget(central_widget)
+
+        self.update_banner = self.create_update_banner()
+        central_layout.addWidget(self.update_banner)
+
         # 탭 위젯 생성
         self.tab_widget = QTabWidget()
         self.tab_widget.setDocumentMode(True)
-        self.setCentralWidget(self.tab_widget)
+        central_layout.addWidget(self.tab_widget)
         
         # 각 탭 초기화 및 추가
         self.task_tab = TaskTab(self.config_manager)
@@ -348,6 +410,48 @@ class MainWindow(QMainWindow):
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
         self.status_bar.showMessage("Ready")
+
+    def create_update_banner(self):
+        banner = QFrame()
+        banner.setObjectName("UpdateBanner")
+        banner.setVisible(False)
+        banner.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+        layout = QHBoxLayout()
+        layout.setContentsMargins(14, 8, 10, 8)
+        layout.setSpacing(10)
+        banner.setLayout(layout)
+
+        text_layout = QVBoxLayout()
+        text_layout.setContentsMargins(0, 0, 0, 0)
+        text_layout.setSpacing(2)
+
+        self.update_banner_title = QLabel("새 버전 사용 가능")
+        self.update_banner_title.setObjectName("UpdateBannerTitle")
+        self.update_banner_body = QLabel("")
+        self.update_banner_body.setObjectName("UpdateBannerBody")
+        self.update_banner_body.setWordWrap(True)
+        text_layout.addWidget(self.update_banner_title)
+        text_layout.addWidget(self.update_banner_body)
+
+        layout.addLayout(text_layout, 1)
+
+        self.update_download_btn = QPushButton("다운로드")
+        self.update_download_btn.setObjectName("UpdateBannerPrimary")
+        self.update_download_btn.clicked.connect(self.download_update_from_banner)
+        layout.addWidget(self.update_download_btn)
+
+        self.update_release_btn = QPushButton("릴리스 보기")
+        self.update_release_btn.setObjectName("UpdateBannerSecondary")
+        self.update_release_btn.clicked.connect(self.open_update_release_page)
+        layout.addWidget(self.update_release_btn)
+
+        close_btn = QPushButton("×")
+        close_btn.setObjectName("UpdateBannerClose")
+        close_btn.setToolTip("이번 알림 닫기")
+        close_btn.clicked.connect(banner.hide)
+        layout.addWidget(close_btn)
+        return banner
         
     def create_menu_bar(self):
         menu_bar = self.menuBar()
@@ -378,43 +482,34 @@ class MainWindow(QMainWindow):
         if self.update_worker and self.update_worker.isRunning():
             return
 
-        if not self.config_manager.get("github_repo", "").strip():
-            if not silent:
-                QMessageBox.information(
-                    self,
-                    "업데이트 설정",
-                    "Settings에서 GitHub 저장소(owner/repo)를 먼저 입력해 주세요."
-                )
-            return
-            
         if not silent:
             self.status_bar.showMessage("Checking for updates...")
             
         self.update_worker = UpdateWorker(current_version=self.current_version)
-        self.update_worker.finished.connect(lambda has_up, lat, url, notes: self.on_update_checked(has_up, lat, url, notes, silent))
+        self.update_worker.finished.connect(
+            lambda has_up, lat, url, notes, err: self.on_update_checked(has_up, lat, url, notes, err, silent)
+        )
         self.update_worker.start()
         
-    def on_update_checked(self, has_update, latest_version, download_url, release_notes, silent):
+    def on_update_checked(self, has_update, latest_version, download_url, release_notes, error_message, silent):
         if not silent:
             self.status_bar.showMessage("Update check finished.", 3000)
+
+        if error_message:
+            if not silent:
+                QMessageBox.warning(
+                    self,
+                    "업데이트 확인 실패",
+                    "GitHub 릴리스 정보를 확인하지 못했습니다.\n"
+                    "private 저장소라면 Settings의 GitHub 저장소와 Access Token을 확인해 주세요.\n\n"
+                    f"상세: {error_message}",
+                )
+            return
             
         if has_update:
-            msg = f"새로운 버전 ({latest_version})이 발견되었습니다!\n\n[릴리즈 노트]\n{release_notes}\n\n지금 업데이트를 다운로드하고 설치하시겠습니까?"
-            reply = QMessageBox.question(
-                self,
-                "업데이트 알림",
-                msg,
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.Yes
-            )
-            if reply == QMessageBox.StandardButton.Yes:
-                if download_url:
-                    self.start_update_download(download_url)
-                else:
-                    # 다운로드 링크가 없을 경우 웹브라우저로 이동
-                    import webbrowser
-                    target_url = f"https://github.com/{self.update_worker.updater.repo_owner}/{self.update_worker.updater.repo_name}/releases"
-                    webbrowser.open(target_url)
+            self.show_update_banner(latest_version, download_url, release_notes)
+            if not silent:
+                self.status_bar.showMessage(f"새 버전 {latest_version} 사용 가능", 5000)
         else:
             if not silent:
                 QMessageBox.information(
@@ -422,6 +517,46 @@ class MainWindow(QMainWindow):
                     "업데이트 정보",
                     f"현재 최신 버전 ({self.current_version})을 사용하고 있습니다."
                 )
+
+    def show_update_banner(self, latest_version, download_url, release_notes=""):
+        self.update_download_url = download_url or ""
+        repo_owner = self.update_worker.updater.repo_owner if self.update_worker else "KwangBeomPark"
+        repo_name = self.update_worker.updater.repo_name if self.update_worker else "FileOps-Hub"
+        self.update_release_url = f"https://github.com/{repo_owner}/{repo_name}/releases/tag/{latest_version}"
+
+        self.update_banner_title.setText(f"새 버전 {latest_version} 사용 가능")
+        body = f"현재 {self.current_version} 사용 중입니다. 최신 설치 파일을 받아 업데이트할 수 있습니다."
+        if release_notes:
+            one_line_notes = " ".join(release_notes.split())
+            if one_line_notes:
+                body += f"  {one_line_notes[:120]}"
+                if len(one_line_notes) > 120:
+                    body += "..."
+        self.update_banner_body.setText(body)
+        self.update_banner_body.setToolTip(release_notes or body)
+        self.update_download_btn.setEnabled(bool(self.update_download_url))
+        self.update_download_btn.setToolTip(
+            "최신 설치 파일을 다운로드합니다."
+            if self.update_download_url
+            else "릴리스 페이지에서 설치 파일을 확인해 주세요."
+        )
+        self.update_banner.setVisible(True)
+
+    def download_update_from_banner(self):
+        if self.update_download_url:
+            self.start_update_download(self.update_download_url)
+        else:
+            self.open_update_release_page()
+
+    def open_update_release_page(self):
+        import webbrowser
+
+        target_url = self.update_release_url
+        if not target_url:
+            repo_owner = self.update_worker.updater.repo_owner if self.update_worker else "KwangBeomPark"
+            repo_name = self.update_worker.updater.repo_name if self.update_worker else "FileOps-Hub"
+            target_url = f"https://github.com/{repo_owner}/{repo_name}/releases"
+        webbrowser.open(target_url)
 
     def start_update_download(self, download_url):
         # 다운로드 경로 설정 (시스템 임시 폴더)

@@ -169,7 +169,7 @@ def check_github_updater_settings(config_manager) -> tuple[bool, str]:
     if mode not in allowed_modes:
         return False, f"auto_check_update 값이 올바르지 않습니다: {mode}"
     if not repo:
-        return True, "GitHub 저장소가 설정되지 않아 업데이트 확인은 비활성 상태입니다."
+        return True, "GitHub 저장소 설정이 비어 있어 기본 저장소(KwangBeomPark/FileOps-Hub)로 업데이트를 확인합니다."
     if repo.count("/") != 1:
         return False, "GitHub 저장소는 owner/repository 형식이어야 합니다."
 

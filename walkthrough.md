@@ -20,6 +20,7 @@
 - `tools/build_all.py`와 `tools/diagnose_install.py`가 Inno Setup 기본 설치 경로도 탐색하도록 보강했습니다.
 - Tesseract가 없을 때 Windows 내장 OCR(`Windows.Media.Ocr`)로 자동 fallback하도록 보강했습니다.
 - 앱 전역 Fusion 다크 팔레트와 툴팁 다크 스타일을 추가했습니다.
+- 신규 버전이 있으면 첫 화면 상단 배너에서 바로 다운로드/릴리스 확인이 가능하도록 업데이트 UX를 개선했습니다.
 
 ## 추가 테스트
 
@@ -42,14 +43,15 @@
 ## 최종 자동 검증 결과
 
 - `python -m compileall -q src tools`: 통과
-- `python -m unittest discover -s tools -p "test_*.py" -v`: 18개 통과
+- `python -m unittest discover -s tools -p "test_*.py" -v`: 22개 통과
 - `python tools/diagnose_install.py --check-browser --check-office`: 차단 이슈 없음
-  - 경고: Tesseract 미설치/PATH 미설정, GitHub updater 저장소 미설정, 현재 PC의 Office COM 미등록
+  - 경고: Tesseract 미설치/PATH 미설정, 현재 PC의 Office COM 미등록
 - `python tools/build_all.py`: PyInstaller exe 및 Inno Setup installer 빌드 성공
 - `dist/IntegratedDataTool.exe` 8초 기동 스모크: 통과
+- 상단 업데이트 배너 오프스크린 렌더링 확인: 통과
 - 실제 Windows OCR fallback 샘플: Tesseract 없이 `PL-ATSZ-20261234-6789` 추출 성공
-- `dist/IntegratedDataTool_Setup_v1.1.1.exe` 무인 설치, 설치된 EXE 8초 기동, 무인 제거 스모크: 통과
-- EXE 크기: 102,354,870 bytes
-- EXE SHA-256: `2B90B29013109FF5BC658046935C5DF1C83BC794E995A9B67D838EDC78B4B80C`
-- Installer 크기: 103,916,969 bytes
-- Installer SHA-256: `EF316F701EC234A29E0D85CF7874794529F8D0431E458D6C54D399E2095D81A7`
+- `dist/IntegratedDataTool_Setup_v1.1.2.exe` 무인 설치, 설치된 EXE 8초 기동, 무인 제거 스모크: 통과
+- EXE 크기: 102,359,030 bytes
+- EXE SHA-256: `1AEA40E0477C5FD87FC7866E172BCA4A63803BC53BA5043D463B67C3F1D9D95B`
+- Installer 크기: 103,920,207 bytes
+- Installer SHA-256: `A98CC3D8530CF05CCCF31B27F467395BB8C458D31D4364EC29207A24F7C0BC60`

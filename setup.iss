@@ -1,11 +1,11 @@
 [Setup]
 AppName=IntegratedDataTool
-AppVersion=1.1.1
+AppVersion=1.1.2
 DefaultDirName={localappdata}\IntegratedDataTool
 DefaultGroupName=IntegratedDataTool
 UninstallDisplayIcon={app}\IntegratedDataTool.exe
 OutputDir=dist
-OutputBaseFilename=IntegratedDataTool_Setup_v1.1.1
+OutputBaseFilename=IntegratedDataTool_Setup_v1.1.2
 Compression=lzma
 SolidCompression=yes
 PrivilegesRequired=lowest

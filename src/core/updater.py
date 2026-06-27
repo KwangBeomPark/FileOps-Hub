@@ -24,10 +24,11 @@ class RedirectWithoutAuth(urllib.request.HTTPRedirectHandler):
 
 
 class AutoUpdater:
-    def __init__(self, current_version="v1.1.1", repo_owner="KwangBeomPark", repo_name="FileOps-Hub"):
+    def __init__(self, current_version="v1.1.2", repo_owner="KwangBeomPark", repo_name="FileOps-Hub"):
         self.current_version = current_version
         self.repo_owner = repo_owner
         self.repo_name = repo_name
+        self.last_error = ""
         self.config_manager = ConfigManager()
         configured_repo = self.config_manager.get("github_repo", "").strip()
         if "/" in configured_repo:
@@ -43,6 +44,7 @@ class AutoUpdater:
         Returns:
             tuple: (has_update, latest_version, download_url, release_notes)
         """
+        self.last_error = ""
         url = f"https://api.github.com/repos/{self.repo_owner}/{self.repo_name}/releases/latest"
         token = self.config_manager.get("github_token", "").strip()
         
@@ -88,6 +90,7 @@ class AutoUpdater:
                     
                 return False, latest_tag, None, ""
         except Exception as e:
+            self.last_error = str(e)
             logger.error(f"Failed to check updates from GitHub: {e}")
             return False, self.current_version, None, ""
             

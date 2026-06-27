@@ -36,7 +36,7 @@ src/ui/task_worker.py(QThread 어댑터) -> src/ui/task_tab.py 진행 UI/메일/
 ## 3. 주요 파일 역할
 
 - `src/main.py`: QApplication 진입점.
-- `src/ui/main_window.py`: 메인 윈도우, 탭 구성, 업데이트 체크 연결.
+- `src/ui/main_window.py`: 메인 윈도우, 탭 구성, 상단 업데이트 배너, 업데이트 체크 연결.
 - `src/ui/task_tab.py`: 통합 실행 선택, 예약 실행, preflight 표시, 진행 상태, 결과 메일/로컬 보고서 저장을 담당합니다.
 - `src/ui/sync_tab.py`: 동기화 그룹 UI와 `SyncRunConfig` 생성.
 - `src/ui/eml_tab.py`: EML 변환 태스크 UI와 `EmlRunConfig` 생성.
@@ -98,3 +98,4 @@ python tools/build_all.py
 - 2026-06-26: `sender_password`를 `ConfigManager.SECURE_KEYS`에 포함하고 SettingsDialog/email_sender의 중복 암복호화를 제거했습니다. 기존 암호화 SMTP 비밀번호를 유지하는 `config_version=2` 마이그레이션을 추가했습니다.
 - 2026-06-26: 설치 방어를 위해 `tools/build_all.py`, `tools/diagnose_install.py`, Inno Setup 탐색 경로, Playwright frozen exe driver 호출 방어, 업데이트 다운로드 방어 테스트를 정리했습니다.
 - 2026-06-27: Tesseract가 없을 때 Windows 내장 OCR fallback을 사용하도록 보강하고, Fusion 기반 전역 다크 팔레트를 추가했습니다.
+- 2026-06-27: 신규 버전이 있으면 메인 화면 상단 배너에 표시하도록 업데이트 UX를 개선하고, 업데이트 확인 실패 상세를 UI와 진단 흐름에서 분리했습니다.

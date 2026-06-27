@@ -141,7 +141,7 @@ def check_office() -> bool:
 
 def check_github_updater() -> bool:
     ok, detail = preflight_check_github_updater_settings(ConfigManager())
-    if ok and "비활성" not in detail:
+    if ok:
         return status(True, "GitHub updater settings", detail)
     return warn("GitHub updater settings", detail)
 

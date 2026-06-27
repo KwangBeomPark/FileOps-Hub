@@ -62,7 +62,7 @@ class UpdaterTests(unittest.TestCase):
             b'{"tag_name":"v1.0.1","body":"notes","assets":['
             b'{"name":"source.zip","browser_download_url":"https://github.com/a/source.zip"},'
             b'{"name":"IntegratedDataTool.exe","browser_download_url":"https://github.com/a/app.exe"},'
-            b'{"name":"IntegratedDataTool_Setup_v1.1.1.exe","browser_download_url":"https://github.com/a/setup.exe"}'
+            b'{"name":"IntegratedDataTool_Setup_v9.9.9.exe","browser_download_url":"https://github.com/a/setup.exe"}'
             b"]}"
         )
         updater = AutoUpdater(current_version="v1.0.0")
@@ -74,6 +74,18 @@ class UpdaterTests(unittest.TestCase):
         self.assertEqual(latest, "v1.0.1")
         self.assertEqual(download_url, "https://github.com/a/setup.exe")
         self.assertEqual(notes, "notes")
+
+    def test_update_check_records_error(self):
+        updater = AutoUpdater(current_version="v1.1.2")
+
+        with patch("urllib.request.urlopen", side_effect=OSError("network down")):
+            has_update, latest, download_url, notes = updater.check_for_updates()
+
+        self.assertFalse(has_update)
+        self.assertEqual(latest, "v1.1.2")
+        self.assertIsNone(download_url)
+        self.assertEqual(notes, "")
+        self.assertIn("network down", updater.last_error)
 
     def test_incomplete_download_is_deleted(self):
         updater = AutoUpdater()
